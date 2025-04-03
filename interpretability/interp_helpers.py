@@ -399,3 +399,42 @@ def calculate_embedding_distances(all_embeddings, checkpoint_numbers, model_labe
     if save_results:
         out_path = fm.get_experiment_file(f'token_embedding_distances.png', run, subdir='predictions')
         plt.savefig(out_path, bbox_inches='tight', dpi=300)
+
+
+def plot_attribution_all_targets(attribution_func, model, sequences, vocab, stoi, ncols=1, **kwargs):
+
+    for sequence in sequences:
+        fig, axs = plt.subplots(ncols=ncols, nrows=4, figsize=(4*ncols, 2.), layout='constrained', sharex=True)
+        if ncols == 1:
+            axs = [np.array(ax) for ax in axs]
+        for t, ax in zip(vocab, axs):
+            target_idx = stoi[t]
+            attribution = attribution_func(model, sequence, stoi, target_idx, **kwargs)
+
+            if not isinstance(attribution, dict):
+                attribution = {attribution_func.__name__: attribution}
+
+            for ax_, attribution_type in zip(ax.flatten(), attribution.keys()):
+                data = attribution[attribution_type].reshape(1, -1)  # Reshape to a 1 × sequence_length matrix  
+                hm = sns.heatmap(data, ax=ax_, vmin=-1, vmax=1, cmap="RdBu", annot=False, cbar=False)
+
+                for i, char in enumerate(sequence):
+                    ax_.text(i + 0.5, 0.5, char, 
+                            horizontalalignment='center',
+                            verticalalignment='center',
+                            fontsize=10,
+                            fontweight='bold',
+                            color='k')
+
+                ax_.yaxis.tick_right()
+                ax_.set_yticks(ax_.get_yticks(), labels=[t], rotation=0)
+                if t == vocab[0]:
+                    ax_.set_title(attribution_type)
+            fig.suptitle(f"Attribution for sequence: {sequence}", y=1.1)
+            ax_.set_xticks([]);
+
+        cbar_ax = fig.add_axes([1.01, 0.15, 0.01, 0.6])  # [x, y, width, height]
+        norm = plt.Normalize(vmin=-1, vmax=1)
+        sm = plt.cm.ScalarMappable(cmap="RdBu", norm=norm)
+        sm.set_array([])
+        fig.colorbar(sm, cax=cbar_ax)
