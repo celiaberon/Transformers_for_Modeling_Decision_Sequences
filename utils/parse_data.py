@@ -327,7 +327,7 @@ def load_trained_model(run, model_name, device, **kwargs):
     # Load the trained model
     model = GPT(config)
     model_path = fm.get_experiment_file(f'{model_name}.pth', run, subdir='models')
-    
+
     try:
         model.load_state_dict(torch.load(model_path, map_location=device, **kwargs))
     except Exception:
@@ -346,6 +346,7 @@ def load_predictions(run, model_name, suffix='v'):
 
     predictions_filename = fm.get_experiment_file(f"pred_{model_name}.txt", run, subdir='seqs')
     indices_filename = fm.get_experiment_file(f"pred_indices_{model_name}.txt", run, subdir='seqs')
+    assert fm.check_files_exist(predictions_filename)
 
     predictions = fm.read_sequence(predictions_filename)
 
