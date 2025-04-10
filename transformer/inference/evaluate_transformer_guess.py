@@ -79,26 +79,6 @@ def calculate_accuracy_ignore_case(ground_truth, predictions):
     return correct / len(ground_truth) if len(ground_truth) > 0 else 0
 
 
-# def load_data(run, model_name):
-
-#     # Parse the ground truth events and map in predictions
-#     files = get_data_filenames(run, suffix='v')
-#     logger.info(f"Analyzing data from:\n {f}\n" for f in files)
-
-#     predictions_filename = fm.get_experiment_file("pred_run_{}.txt", run, f"_{model_name}", subdir='seqs')
-#     assert fm.check_files_exist(predictions_filename)
-
-#     # Parse the ground truth events and map in predictions
-#     ground_truth = parse_simulated_data(*files)    
-#     predictions = list(fm.read_sequence(predictions_filename))
-
-#     assert len(ground_truth) == len(predictions), (
-#         "Ground truth and predictions have different lengths")
-
-#     aligned_data = align_predictions_with_gt(ground_truth, predictions)
-#     return aligned_data
-
-
 def main(run=None, model_name=None):
 
     if run is None:
@@ -117,7 +97,8 @@ def main(run=None, model_name=None):
         logger.raw(f'\nAnalysis for Domain {domain}')
         print_accuracy(data)
         print_switches(data)
-        plot_confusion_matrix(data, run, model_name, domain)
+        if model_name.split('_')[-1].startswith('cp'):
+            plot_confusion_matrix(data, run, model_name, domain)
 
 if __name__ == "__main__":
     print('-' * 80)

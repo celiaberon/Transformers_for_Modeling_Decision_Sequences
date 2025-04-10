@@ -2,17 +2,16 @@ source "./slurm_scripts/common_functions.sh"
 setup_environment
 
 # Parameters for experiment sweeps (or single)
-LAYERS_ARRAY=(1)
-HEADS_ARRAY=(1)
-EPOCHS_ARRAY=(100 300)
+LAYERS_ARRAY=(1 2)
+HEADS_ARRAY=(1 2)
+EPOCHS_ARRAY=(100)
 TRAIN_STEPS_ARRAY=(100000)
-# CONTEXT_LENGTH_ARRAY=(3 6 24 36)
-CONTEXT_LENGTH_ARRAY=(6 12)
-EMBD_DIM_ARRAY=(4 8 16)
+CONTEXT_LENGTH_ARRAY=(36)
+EMBD_DIM_ARRAY=(64)
 BATCH_SIZE_ARRAY=(256)
-DOMAIN_CONFIG_ARRAY=("three_domains.ini")
+DOMAIN_CONFIG_ARRAY=("domains.ini")
 DOMAIN_ID_ARRAY=("B")
-EXPERIMENT_TYPE="basic"  # define the experiment you are running
+EXPERIMENT_TYPE="multi_domain"  # define the experiment you are running
 
 # Options are:
 #   "basic": run_experiment.sh
@@ -27,7 +26,7 @@ initialize_run
 NEXT_RUN_NUMBER=$RUN_NUMBER
 
 # At the top of your script
-MAX_CONCURRENT_JOBS=12
+MAX_CONCURRENT_JOBS=13
 # Function to count currently running/pending jobs
 count_running_jobs() {
     local username=$(whoami)
