@@ -236,7 +236,7 @@ def cluster_sequences_hierarchical(similarity_matrix, sequences, replot=True,
     ordered_sim_matrix = similarity_matrix[ordered_indices][:, ordered_indices]
 
     if replot:
-        fig, ax = plt.subplots(figsize=(0.4 * len(sequences), 0.4 * len(sequences)),
+        fig, ax = plt.subplots(figsize=(0.18 * len(sequences), 0.18 * len(sequences)),
                                layout='constrained')
         ax = plot_similarity(ordered_sim_matrix, ordered_sequences, ax=ax)
         ax.set(title='Similarity Matrix (Ordered by Hierarchical Clustering)')
