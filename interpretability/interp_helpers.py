@@ -11,6 +11,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import utils.file_management as fm
+import utils.parse_data as parse
 from utils.checkpoint_processing import (add_checkpoint_colorbar,
                                          generate_checkpoint_colormap,
                                          process_checkpoints)
@@ -18,6 +19,24 @@ from utils.checkpoint_processing import (add_checkpoint_colorbar,
 vocab = ['R', 'r', 'L', 'l']
 stoi = {ch: i for i, ch in enumerate(vocab)}
 itos = {i: ch for i, ch in enumerate(vocab)}
+
+
+def tokenize(sequences):
+    return torch.tensor([[stoi[char] for char in sequence] for sequence in sequences])
+
+
+def get_common_sequences(T, run=None, events=None, min_count=50, k=10):
+    if events is None:
+        events = parse.parse_simulated_data(*parse.get_data_filenames(run, suffix='v'))
+
+    if f'seq{T}_RL' not in events.columns or all(events[f'seq{T}_RL'].isna()):
+        events = parse.add_sequence_columns(events, T)
+
+    vc = events[f'seq{T}_RL'].value_counts()
+    sequences = vc[vc > min_count].index.tolist()[:k]
+    sequences_values = vc[vc > min_count].values.tolist()[:k]
+    return events, sequences, sequences_values
+
 
 def token_embedding_similarity(model, vocab_mappings, ax=None):
     """
@@ -203,12 +222,15 @@ def cluster_sequences_hierarchical(similarity_matrix, sequences, replot=True,
     """
     from scipy.cluster.hierarchy import (dendrogram, linkage,
                                          optimal_leaf_ordering)
+    from scipy.spatial.distance import squareform
 
     # Convert similarity to distance if needed (distance = 1 - similarity)
     if metric != 'precomputed':
         distance_matrix = 1 - similarity_matrix
     else:
         distance_matrix = similarity_matrix
+
+    distance_matrix = squareform(distance_matrix)
 
     # Compute linkage matrix
     Z = linkage(distance_matrix, method=method)
