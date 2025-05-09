@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
+import torch.nn.functional as F
 from sklearn.decomposition import PCA
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -22,7 +23,8 @@ itos = {i: ch for i, ch in enumerate(vocab)}
 
 
 def tokenize(sequences):
-    return torch.tensor([[stoi[char] for char in sequence] for sequence in sequences])
+    return torch.tensor([[stoi[char] for char in sequence]
+                         for sequence in sequences])
 
 
 def get_common_sequences(T, run=None, events=None, min_count=50, k=10):
@@ -38,9 +40,107 @@ def get_common_sequences(T, run=None, events=None, min_count=50, k=10):
     return events, sequences, sequences_values
 
 
+def get_block_transition_sequences(events, T, trial_range=(-3, 9), high_port=1):
+    """Get block transitions from (e.g.) left->right blocks (high_port=1)
+    where agent had ~stable selection of Left at transition
+    """
+    if high_port == 1:
+        seq = 'LL'
+    elif high_port == 0:
+        seq = 'RR'
+    block_starts_1 = events.query(f'block_position == 0\
+         & block_id > 0 & high_port == {high_port} & seq2_RL == "{seq}"\
+         & block_length > 10 & prev_block_length > 10').trial_number.values
+    sequences = [events.loc[np.arange(trial_range[0], trial_range[1]) + b, 'seq6_RL']
+              for b in block_starts_1]
+    return sequences
+
+
+def predict_token(model, sequences):
+    tokenized_sequences = tokenize(sequences)
+    logits, _ = model(tokenized_sequences)
+    probs = F.softmax(logits[:, -1, :], dim=1)
+    max_probs, predicted_token = probs.max(dim=1)
+    predicted_token = [itos[t] for t in predicted_token.detach().cpu().numpy()]
+    return predicted_token
+
+
+def get_uncertain_sequences(sequences, model, feature='all',
+                            is_uncertain=True, threshold=0.7):
+
+    def combine_logits_by_group(logits, group_label=''):
+        """Combine logits by grouping tokens (choice or reward)"""
+        group_idcs = {
+            'choice': [[0, 1], [2, 3]],  # Right and left
+            'reward': [[0, 2], [1, 3]]   # Reward and unreward
+        }
+
+        grouped_logits = []
+
+        for i, idcs in enumerate(group_idcs.get(group_label)):
+            grouped_logits.append(logits[:, :, idcs].sum(dim=2))
+
+        combined_logits = torch.stack(grouped_logits, dim=2)
+        return combined_logits
+
+    tokenized_sequences = tokenize(sequences)
+
+    logits, _ = model(tokenized_sequences)
+
+    if feature == 'choice':
+        combined_logits = combine_logits_by_group(logits, group_label='choice')
+        probs = F.softmax(combined_logits[:, -1, :], dim=1)
+        uncertainty = 1-abs(0.5 - probs.detach().cpu().numpy()[:, 0])
+    else:
+        probs = F.softmax(logits[:, -1, :], dim=1)
+        uncertainty, predicted_token = probs.max(dim=1)
+        uncertainty = 1-uncertainty.detach().cpu().numpy()
+
+    # Sort sequences by uncertainty/certainty
+    sorted_indices = np.argsort(uncertainty)
+    sorted_sequences = [sequences[i] for i in sorted_indices]
+    sorted_uncertainty = uncertainty[sorted_indices]
+
+    if is_uncertain:
+        # Get sequences above threshold
+        mask = sorted_uncertainty > threshold
+        select_sequences = [seq for i, seq in enumerate(sorted_sequences) if mask[i]]
+        select_uncertainty = sorted_uncertainty[mask]
+    else:
+        mask = sorted_uncertainty < threshold
+        select_sequences = [seq for i, seq in enumerate(sorted_sequences) if mask[i]]
+        select_uncertainty = sorted_uncertainty[mask]
+
+    return select_sequences, select_uncertainty
+
+
+def embed_sequence(model, sequence, flatten=True):
+
+    input_tensor = tokenize(sequence).unsqueeze(0).to(model.device)
+
+    pos = torch.arange(0, len(input_tensor), dtype=torch.long,
+                       device=input_tensor.device)
+
+    # Get token embeddings and positional embeddings (exactly as in model.forward)
+    token_embeddings = model.transformer.wte(input_tensor)
+    pos_embeddings = model.transformer.wpe(pos)
+
+    # Combine token and positional embeddings (exactly as the model does)
+    combined_embeddings = token_embeddings + pos_embeddings
+
+    if flatten:
+        # Flatten to get a single vector representation of the entire sequence
+        combined_embeddings = combined_embeddings.squeeze(0).flatten()
+    else:
+        combined_embeddings = combined_embeddings.squeeze(0)
+
+    return combined_embeddings.detach().cpu().numpy()
+
+
 def token_embedding_similarity(model, vocab_mappings, ax=None):
     """
-    Analyze the token embeddings from the input embedding layer (model.transformer.wte).
+    Analyze the token embeddings from the input embedding layer
+    (model.transformer.wte). Weights are equivalent to embeddings.
 
     Parameters:
     -----------
@@ -91,26 +191,7 @@ def sequence_embedding_similarity(model, sequences, stoi):
     sequence_embeddings = []
 
     for sequence in sequences:
-        # Get indices for tokens in the sequence
-        token_indices = [stoi[char] for char in sequence]
-
-        input_tensor = (torch.tensor(token_indices, dtype=torch.long)
-                        .unsqueeze(0)
-                        .to(model.device))
-
-        pos = torch.arange(0, len(token_indices), dtype=torch.long,
-                           device=input_tensor.device)
-
-        # Get token embeddings and positional embeddings (exactly as in model.forward)
-        token_embeddings = model.transformer.wte(input_tensor)
-        pos_embeddings = model.transformer.wpe(pos)
-
-        # Combine token and positional embeddings (exactly as the model does)
-        combined_embeddings = token_embeddings + pos_embeddings
-
-        # Flatten to get a single vector representation of the entire sequence
-        flat_embedding = combined_embeddings.squeeze(0).flatten().detach().cpu().numpy()
-        sequence_embeddings.append(flat_embedding)
+        sequence_embeddings.append(embed_sequence(model, sequence, stoi))
 
     sequence_embeddings = np.array(sequence_embeddings)
 
@@ -127,7 +208,7 @@ def plot_similarity(similarity_matrix, sequences, ax=None, annot=False):
 
     if ax is None:
         fig, ax = plt.subplots(figsize=(4, 3), layout='constrained')
-    
+
     sns.heatmap(
         similarity_matrix,
         annot=annot,
@@ -212,7 +293,9 @@ def cluster_sequences_hierarchical(similarity_matrix, sequences, replot=True,
     Parameters:
     -----------
     similarity_matrix : numpy.ndarray
-        Matrix of similarities between sequences
+        Matrix of similarities between sequences. Can be either:
+        - Square matrix (n x n) of similarities/distances
+        - Condensed distance matrix (1D array of upper triangular elements)
     sequences : list of str
         List of sequences 
     method : str, default='ward'
@@ -230,7 +313,13 @@ def cluster_sequences_hierarchical(similarity_matrix, sequences, replot=True,
     else:
         distance_matrix = similarity_matrix
 
-    distance_matrix = squareform(distance_matrix)
+    # Check if matrix is already in square form
+    is_square = (len(distance_matrix.shape) == 2 and 
+                 distance_matrix.shape[0] == distance_matrix.shape[1])
+
+    if not is_square:
+        # Convert condensed distance matrix to square form
+        distance_matrix = squareform(distance_matrix)
 
     # Compute linkage matrix
     Z = linkage(distance_matrix, method=method)
@@ -266,14 +355,14 @@ def cluster_sequences_hierarchical(similarity_matrix, sequences, replot=True,
     return ordered_sequences, ordered_sim_matrix, Z_ordered
 
 
-def extract_token_embeddings(model):
+def extract_token_embeddings(model, **kwargs):
     """Extract token embedding weights from a model."""
     return model.transformer.wte.weight.detach().cpu().numpy()
 
 
-def embedding_processor(model, *kwargs):
+def embedding_processor(model, **kwargs):
     """Process a model to extract its token embeddings."""
-    embeddings = extract_token_embeddings(model)
+    embeddings = extract_token_embeddings(model, **kwargs)
     return embeddings
 
 
