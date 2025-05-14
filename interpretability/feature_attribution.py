@@ -24,10 +24,14 @@ sns.set_theme(
 
 
 class PerturbationAnalyzer:
-    def __init__(self, model: torch.nn.Module):
+    def __init__(self, model: torch.nn.Module, layers: dict[str, str] = None, method: str = 'gradients'):
         self.model = model
         self.vocab = ['R', 'r', 'L', 'l']
         self.stoi = {ch: i for i, ch in enumerate(self.vocab)}
+        if method == 'gradients':
+            self.layers = layers or self._get_layers()
+        else:
+            self.layers = ['inputs']
 
     def _prepare_input(self, sequence):
         token_ids = tokenize(sequence)
@@ -57,6 +61,15 @@ class PerturbationAnalyzer:
 
     def _get_transformer_layers(self):
         return self.model.transformer.h
+
+    def _get_layers(self):
+        layers = {
+            'token_embedding': 'transformer.wte',
+            'position_embedding': 'transformer.wpe',
+            'layer0_attn': 'transformer.h.0.attn',
+            'layer0_mlp': 'transformer.h.0.mlp',
+        }
+        return {name: self._get_module_by_path(path) for name, path in layers.items()}
 
     def _get_module_by_path(self, path):
         """Access a module using a string path"""
@@ -121,11 +134,11 @@ class PerturbationAnalyzer:
         """Compute attribution from activation and gradient tensors."""
         return (activation * gradient).sum(dim=-1).cpu().numpy().squeeze()
 
-    def _process_layer_attributions(self, layer_activations, layer_gradients, layers_of_interest):
+    def _process_layer_attributions(self, layer_activations, layer_gradients):
         """Process captured activations and gradients into attribution scores."""
         attributions = {}
 
-        for layer_name in layers_of_interest:
+        for layer_name in self.layers:
             if layer_activations[layer_name] and layer_gradients[layer_name]:
                 activation = layer_activations[layer_name][0]
                 gradient = layer_gradients[layer_name][0]
@@ -238,26 +251,23 @@ class PerturbationAnalyzer:
             layer_importance[layer_name] = abs(base_score - perturbed_score)
         return layer_importance
 
-    def layer_gradient_attribution(self, sequence, target_token_idx, layers_of_interest=None):
+    def layer_gradient_attribution(self, sequence, target_token_idx):
         """Compute gradient-based attributions for specified layers."""
-        if layers_of_interest is None:
-            layers_of_interest = {
-                'token_embedding': self.model.transformer.wte,
-                'position_embedding': self.model.transformer.wpe
-            }
+
         input_tensor = self._prepare_input(sequence)
 
-        with self._capture_gradients(layers_of_interest) as (activations, gradients):
+        with self._capture_gradients(self.layers) as (activations, gradients):
             # Forward and backward pass
             logits, _ = self.model(input_tensor, targets=None)
             target = torch.zeros_like(logits)
             target[0, -1, target_token_idx] = 1.0
             self.model.zero_grad()
             logits.backward(target, retain_graph=True)
-            attributions = self._process_layer_attributions(activations, gradients, layers_of_interest)
+            attributions = self._process_layer_attributions(activations, gradients)
             return attributions
 
-    def plot_sequence_attribution(self, ax, sequence, target_token, attribution_type, attribution_value):
+    def plot_sequence_attribution(self, ax, sequence, target_token, attribution_value):
+       
         hm = sns.heatmap(
             attribution_value.reshape(1, -1),
             ax=ax,
@@ -275,40 +285,62 @@ class PerturbationAnalyzer:
             )
         ax.yaxis.tick_right()
         ax.set_yticks([0.5], labels=[target_token], rotation=0)
-        # Check if called from notebook/interactive shell vs from another function
-        if len(inspect.stack()) <= 2:  # Called directly or from notebook
-            ax.set_title(attribution_type.replace('_', ' ').capitalize())
         ax.set_xticks([])
 
-    def plot_attribution_all_targets(self, sequences, method='contrastive', ncols=1, **kwargs):
+    def get_attribution_all_targets(self, sequence, method='contrastive', **kwargs):
         attribution_func = self._get_attribution_function(method)
+
+        attributions = {}
+        for t in self.vocab:
+            target_idx = self.stoi[t]
+            attribution = attribution_func(sequence, target_idx, **kwargs)
+            if not isinstance(attribution, dict):
+                attribution = {self.layers[0]: attribution}
+            attributions[t] = attribution
+        return attributions
+
+    def plot_attribution_all_targets(self, sequences, method='contrastive', ncols=1, **kwargs):
         if not isinstance(sequences, list):
             sequences = [sequences]
 
-        fig, axs = plt.subplots(
-            ncols=ncols,
-            nrows=len(self.vocab),
-            figsize=(2.1*ncols, 1.2),
-            sharex=True,
-            gridspec_kw={'wspace': 0.5}
-        )
-        if ncols == 1:
-            axs = [axs] #[np.array(ax) for ax in axs]
-        else:
-            axs = axs.T
+        n_layers = len(self.layers)
+        n_sequences = len(sequences)
 
-        for ax0, sequence in zip(axs, sequences):
-            for t, ax in zip(self.vocab, ax0):
-                target_idx = self.stoi[t]
-                attribution = attribution_func(sequence, target_idx, **kwargs)
-                if not isinstance(attribution, dict):
-                    attribution = {method: attribution}
-                for ax_, attribution_type, attribution_value in zip(ax.flatten(), attribution.items()):
-                    self.plot_sequence_attribution(ax_, sequence, t, attribution_type, attribution_value)
-            if len(inspect.stack()) <= 2:  # Called directly or from notebook
-                fig.suptitle(f"Attribution for sequence: {sequence}", y=1.1)
+        # Get all attributions for all sequences up front.
+        attributions = {}
+        for sequence in sequences:
+            attributions[sequence] = self.get_attribution_all_targets(sequence, method, **kwargs)
+            
+        # if n_layers > 1:
+        # For multi-layer (gradient methods): layers as rows, sequences as columns
+
+        fig = plt.figure(figsize=(2.1*n_sequences, 0.3*len(self.vocab)*n_layers))
+        subfigs = fig.subfigures(nrows=n_layers, hspace=0.04)
+
+        if n_layers == 1:
+            subfigs = [subfigs]
+
+        for layer, subfig in zip(self.layers, subfigs):
+            axs = subfig.subplots(
+                nrows=len(self.vocab),
+                ncols=n_sequences,
+                sharex=True,
+                gridspec_kw={'wspace': 0.3}
+            )
+            if n_sequences == 1:
+                axs = [axs]
             else:
-                ax0[0].set_title(sequence, y=1.1)
+                axs = axs.T
+
+            for ax0, sequence in zip(axs, sequences):
+                for t, ax in zip(self.vocab, ax0):
+                    self.plot_sequence_attribution(ax, sequence, t, attributions[sequence][t][layer])
+
+                if layer == list(self.layers)[0]:
+                    ax0[0].set_title(sequence, y=1.1 + ((n_layers > 1)/2))
+
+            if n_layers > 1:
+                subfig.suptitle(layer, y=1.01)
 
             cbar_width = 0.03 / ncols
             cbar_x = 1.033 - (0.0129 * ncols)
@@ -322,24 +354,24 @@ class PerturbationAnalyzer:
 
     def plot_attribution_contiguous_sequences(self, sequences, method='contrastive', **kwargs):
 
-        n = len(sequences)
+        n_sequences = len(sequences)
+        n_layers = len(self.layers)
+        y = 1 + ((n_layers > 1) * 0.03)
+        fig, axs = self.plot_attribution_all_targets(sequences, method, ncols=n_sequences, **kwargs)
 
-        fig, axs = self.plot_attribution_all_targets(sequences, method, ncols=n, **kwargs)
-
-        if n == 1:
+        if n_sequences == 1:
             return fig, axs
 
-        for i in range(n - 1):
-            ax1 = axs[i][0]
-            ax2 = axs[i+1][0]
-
-            # Get bounding boxes
+        for i in range(n_sequences - 1):
+            ax1 = axs.T[0][i]
+            ax2 = axs.T[0][i+1]
             fig.canvas.draw()
             x1 = ax1.get_position().x1
             x2 = ax2.get_position().x0
             dx = x2 - x1
+
             # Create a line with an arrow marker
-            line = Line2D([x1 + (0.4*dx), x2 - (0.1*dx)], [0.5, 0.5],
+            line = Line2D([x1 + (0.4*dx), x2 - (0.1*dx)], [y, y],
                         marker='>', markeredgecolor='gray', markevery=[-1],
                         color='gray', linewidth=1.5,  markersize=6,
                         figure=fig,
