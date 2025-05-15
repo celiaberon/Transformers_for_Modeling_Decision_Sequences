@@ -1,5 +1,19 @@
-import inspect
+"""Feature attribution methods for analyzing transformer model predictions.
+
+This module provides various methods for attributing model predictions to input features
+and intermediate layers. It includes implementations of various perturbation and gradient-based
+methods for feature attribution:
+- Integrated Gradients
+- Embedding Erasure
+- Contrastive Attribution
+- Layer Perturbation Analysis
+- Layer Gradient Attribution
+
+The main class `AttributionAnalyzer` provides a unified interface for all attribution methods.
+"""
+
 from contextlib import contextmanager
+from typing import Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,56 +37,128 @@ sns.set_theme(
         })
 
 
-class PerturbationAnalyzer:
-    def __init__(self, model: torch.nn.Module, layers: dict[str, str] = None, method: str = 'gradients'):
+class AttributionAnalyzer:
+    """Analyzer for feature attribution in transformer models.
+    
+    This class provides methods to analyze how different parts of the input and
+    intermediate layers contribute to model predictions. It supports multiple
+    attribution methods including integrated gradients, embedding erasure,
+    and contrastive attribution.
+    
+    Args:
+        model: The transformer model to analyze
+        layers: Optional dictionary mapping layer names to module paths
+        method: The default attribution method to use ('gradients' or 'inputs')
+    """
+    
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        layers: Optional[dict[str, str]] = None,
+        method: str = 'gradients'
+    ) -> None:
+        """Initialize the analyzer with a model and optional layer configuration."""
         self.model = model
         self.vocab = ['R', 'r', 'L', 'l']
         self.stoi = {ch: i for i, ch in enumerate(self.vocab)}
+        
         if method == 'gradients':
             self.layers = layers or self._get_layers()
         else:
             self.layers = ['inputs']
 
-    def _prepare_input(self, sequence):
+    def _prepare_input(self, sequence: str) -> torch.Tensor:
+        """Convert input sequence to tensor format.
+        
+        Args:
+            sequence: Input sequence string
+            
+        Returns:
+            Tensor of shape [1, seq_len] containing token indices
+        """
         token_ids = tokenize(sequence)
         if isinstance(token_ids, torch.Tensor):
             input_tensor = token_ids.clone().detach().unsqueeze(0)
         else:
-            input_tensor = torch.tensor(token_ids, dtype=torch.long).unsqueeze(0)
+            input_tensor = torch.tensor(
+                token_ids,
+                dtype=torch.long
+            ).unsqueeze(0)
         return input_tensor.to(self.model.device)
 
-    def _get_score(self, input_tensor, target_token_idx, as_prob=False):
+    def _get_score(
+        self,
+        input_tensor: torch.Tensor,
+        target_token_idx: int,
+        as_prob: bool = False
+    ) -> float:
+        """Get model's prediction score for target token.
+        
+        Args:
+            input_tensor: Input tensor of shape [1, seq_len]
+            target_token_idx: Index of target token in vocabulary
+            as_prob: Whether to return probability instead of logit
+            
+        Returns:
+            Model's prediction score for target token
+        """
         with torch.no_grad():
             base_logits, _ = self.model(input_tensor)
             base_probs = F.softmax(base_logits[0, -1], dim=0)
             if as_prob:
                 return base_probs[target_token_idx].item()
-            else:
-                return base_logits[0, -1, target_token_idx].item()
+            return base_logits[0, -1, target_token_idx].item()
 
     @contextmanager
-    def _register_hooks(self, hooks):
-        handles = [module.register_forward_hook(hook) for module, hook in hooks]
+    def _register_hooks(
+        self,
+        hooks: list[tuple[torch.nn.Module, callable]]
+    ) -> None:
+        """Context manager for registering and cleaning up hooks.
+        
+        Args:
+            hooks: List of (module, hook_function) tuples to register
+        """
+        handles = [
+            module.register_forward_hook(hook)
+            for module, hook in hooks
+        ]
         try:
             yield
         finally:
             for handle in handles:
                 handle.remove()
 
-    def _get_transformer_layers(self):
+    def _get_transformer_layers(self) -> list[torch.nn.Module]:
+        """Get list of transformer layers from the model."""
         return self.model.transformer.h
 
-    def _get_layers(self):
+    def _get_layers(self) -> dict[str, torch.nn.Module]:
+        """Get default layer configuration for attribution.
+        
+        Returns:
+            Dictionary mapping layer names to module instances
+        """
         layers = {
             'token_embedding': 'transformer.wte',
             'position_embedding': 'transformer.wpe',
             'layer0_attn': 'transformer.h.0.attn',
             'layer0_mlp': 'transformer.h.0.mlp',
         }
-        return {name: self._get_module_by_path(path) for name, path in layers.items()}
+        return {
+            name: self._get_module_by_path(path)
+            for name, path in layers.items()
+        }
 
-    def _get_module_by_path(self, path):
-        """Access a module using a string path"""
+    def _get_module_by_path(self, path: str) -> torch.nn.Module:
+        """Access a module using a string path.
+        
+        Args:
+            path: Dot-separated path to module (e.g. 'transformer.h.0.attn')
+            
+        Returns:
+            The specified module
+        """
         modules = path.split('.')
         current = self.model
         for module in modules:
@@ -82,16 +168,24 @@ class PerturbationAnalyzer:
                 current = getattr(current, module)
         return current
 
-    def _get_attribution_function(self, method):
-        """
-        Main entry point: choose attribution method.
+    def _get_attribution_function(self, method: str) -> callable:
+        """Get the appropriate attribution function for the given method.
+        
+        Args:
+            method: Name of attribution method to use
+            
+        Returns:
+            Function implementing the requested attribution method
+            
+        Raises:
+            ValueError: If method is not recognized
         """
         if method == "embedding_erasure":
             return self.embedding_erasure_attribution
         elif method == "contrastive":
             return self.contrastive_attribution
-        elif method == "layer_perturbation":
-            return self.layer_perturbation_analysis
+        elif method == "lime":
+            return self.lime_attribution_contrastive
         elif method == "layer_gradient":
             return self.layer_gradient_attribution
         elif method == "integrated_gradients":
@@ -99,9 +193,27 @@ class PerturbationAnalyzer:
         else:
             raise ValueError(f"Unknown attribution method: {method}")
 
-    def _create_gradient_hook(self, layer_name, layer_activations, layer_gradients):
-        """Create a forward hook that captures both activations and gradients."""
-        def forward_hook(module, inp, out):
+    def _create_gradient_hook(
+        self,
+        layer_name: str,
+        layer_activations: dict[str, list[torch.Tensor]],
+        layer_gradients: dict[str, list[torch.Tensor]]
+    ) -> callable:
+        """Create a forward hook that captures both activations and gradients.
+        
+        Args:
+            layer_name: Name of the layer being hooked
+            layer_activations: Dictionary to store captured activations
+            layer_gradients: Dictionary to store captured gradients
+            
+        Returns:
+            Forward hook function that captures activations and registers gradient hook
+        """
+        def forward_hook(
+            module: torch.nn.Module,
+            inp: tuple[torch.Tensor, ...],
+            out: torch.Tensor
+        ) -> torch.Tensor:
             # Store activation immediately
             if isinstance(out, tuple):
                 act = out[0]
@@ -116,7 +228,7 @@ class PerturbationAnalyzer:
                 out = out.requires_grad_(True)
             
             # Register gradient hook
-            def grad_hook(grad):
+            def grad_hook(grad: torch.Tensor) -> torch.Tensor:
                 layer_gradients[layer_name].append(grad.detach().clone())
                 return grad
             
@@ -126,8 +238,18 @@ class PerturbationAnalyzer:
         return forward_hook
 
     @contextmanager
-    def _capture_gradients(self, layers_dict):
-        """Context manager to capture both activations and gradients for specified layers."""
+    def _capture_gradients(
+        self,
+        layers_dict: dict[str, torch.nn.Module]
+    ) -> tuple[dict[str, list[torch.Tensor]], dict[str, list[torch.Tensor]]]:
+        """Context manager to capture both activations and gradients for specified layers.
+        
+        Args:
+            layers_dict: Dictionary mapping layer names to module instances
+            
+        Yields:
+            Tuple of (activations, gradients) dictionaries
+        """
         activations = {name: [] for name in layers_dict}
         gradients = {name: [] for name in layers_dict}
 
@@ -139,56 +261,102 @@ class PerturbationAnalyzer:
         with self._register_hooks(hooks):
             yield activations, gradients
 
-    def _compute_layer_attribution(self, activation, gradient):
-        """Compute attribution from activation and gradient tensors."""
+    def _compute_layer_attribution(
+        self,
+        activation: torch.Tensor,
+        gradient: torch.Tensor
+    ) -> np.ndarray:
+        """Compute attribution from activation and gradient tensors.
+        
+        Args:
+            activation: Layer activation tensor
+            gradient: Layer gradient tensor
+            
+        Returns:
+            Attribution scores as numpy array
+        """
         return (activation * gradient).sum(dim=-1).cpu().numpy().squeeze()
 
-    def _process_layer_attributions(self, layer_activations, layer_gradients):
-        """Process captured activations and gradients into attribution scores."""
+    def _process_layer_attributions(
+        self,
+        layer_activations: dict[str, list[torch.Tensor]],
+        layer_gradients: dict[str, list[torch.Tensor]]
+    ) -> dict[str, Optional[np.ndarray]]:
+        """Process captured activations and gradients into attribution scores.
+        
+        Args:
+            layer_activations: Dictionary of captured activations
+            layer_gradients: Dictionary of captured gradients
+            
+        Returns:
+            Dictionary mapping layer names to attribution scores
+        """
         attributions = {}
 
         for layer_name in self.layers:
             if layer_activations[layer_name] and layer_gradients[layer_name]:
                 activation = layer_activations[layer_name][0]
                 gradient = layer_gradients[layer_name][0]
-                attributions[layer_name] = self._compute_layer_attribution(activation, gradient)
+                attributions[layer_name] = self._compute_layer_attribution(
+                    activation,
+                    gradient
+                )
             else:
                 print(f"Warning: No activations or gradients captured for {layer_name}")
                 attributions[layer_name] = None
 
         # Handle special combination logic
-        if 'token_embedding' in attributions and 'position_embedding' in attributions:
-            if attributions['token_embedding'] is not None and attributions['position_embedding'] is not None:
-                attributions['combined'] = attributions['token_embedding'] + attributions['position_embedding']
+        if ('token_embedding' in attributions and 'position_embedding' in attributions and
+            attributions['token_embedding'] is not None and attributions['position_embedding'] is not None):
+            attributions['combined'] = attributions['token_embedding'] + attributions['position_embedding']
 
         return attributions
 
-    def embedding_erasure_attribution(self, sequence, target_token_idx, as_prob=False):
-        """Measure influence of each input token by zeroing both its token and positional embeddings."""
+    def embedding_erasure_attribution(
+        self,
+        sequence: str,
+        target_token_idx: int,
+        as_prob: bool = False
+    ) -> np.ndarray:
+        """Measure influence of each input token by zeroing its embeddings.
+        
+        For each position, measures the effect of zeroing both token and
+        positional embeddings on the model's prediction.
+        
+        Args:
+            sequence: Input sequence to analyze
+            target_token_idx: Index of target token in vocabulary
+            as_prob: Whether to use probability instead of logit
+            
+        Returns:
+            Array of attribution scores for each position
+        """
         input_tensor = self._prepare_input(sequence)
         base_score = self._get_score(input_tensor, target_token_idx, as_prob)
         attributions = []
 
         for i in range(len(sequence)):
-            def token_embedding_hook(module, input, output):
-                modified_output = output.clone()
-                if len(modified_output.shape) == 3:  # [batch, seq_len, embedding_dim]
-                    modified_output[0, i, :] = 0.0
-                elif len(modified_output.shape) == 2:  # [seq_len, embedding_dim]
-                    modified_output[i, :] = 0.0
-                return modified_output
+            def create_erasure_hook(position: int):
+                def hook(
+                    module: torch.nn.Module,
+                    input: tuple[torch.Tensor, ...],
+                    output: torch.Tensor
+                ) -> torch.Tensor:
+                    modified_output = output.clone()
+                    if len(modified_output.shape) == 3:  # [batch, seq_len, embedding_dim]
+                        modified_output[0, position, :] = 0.0
+                    elif len(modified_output.shape) == 2:  # [seq_len, embedding_dim]
+                        modified_output[position, :] = 0.0
+                    return modified_output
+                return hook
 
-            def position_embedding_hook(module, input, output):
-                modified_output = output.clone()
-                if len(modified_output.shape) == 3:  # [batch, seq_len, embedding_dim]
-                    modified_output[0, i, :] = 0.0
-                elif len(modified_output.shape) == 2:  # [seq_len, embedding_dim]
-                    modified_output[i, :] = 0.0
-                return modified_output
+            # Create hooks for both token and position embeddings
+            token_hook = create_erasure_hook(i)
+            position_hook = create_erasure_hook(i)
 
             hooks = [
-                (self.model.transformer.wte, token_embedding_hook),
-                (self.model.transformer.wpe, position_embedding_hook)
+                (self.model.transformer.wte, token_hook),
+                (self.model.transformer.wpe, position_hook)
             ]
             with self._register_hooks(hooks):
                 with torch.no_grad():
@@ -201,12 +369,25 @@ class PerturbationAnalyzer:
             attributions.append(base_score - masked_score)
         return np.array(attributions)
 
-    def contrastive_attribution(self, sequence, target_token_idx, as_prob=False):
-        """Measure each token's importance by comparing against alternative tokens
-
+    def contrastive_attribution(
+        self,
+        sequence: str,
+        target_token_idx: int,
+        as_prob: bool = False
+    ) -> np.ndarray:
+        """Measure each token's importance by comparing against alternatives.
+        
         For each position, compares the effect of the actual token against the
-        average effect of all other possible tokens in the vocabulary."""
-
+        average effect of all other possible tokens in the vocabulary.
+        
+        Args:
+            sequence: Input sequence to analyze
+            target_token_idx: Index of target token in vocabulary
+            as_prob: Whether to use probability instead of logit
+            
+        Returns:
+            Array of attribution scores for each position
+        """
         input_tensor = self._prepare_input(sequence)
         base_score = self._get_score(input_tensor, target_token_idx, as_prob)
         attributions = []
@@ -226,39 +407,104 @@ class PerturbationAnalyzer:
             attributions.append(base_score - avg_alt_score)
         return np.array(attributions)
 
-    def layer_perturbation_analysis(self, sequence, target_token_idx):
-        """Analyze layer importance by perturbing intermediate activations."""
-        input_tensor = self._prepare_input(sequence)
-        layer_activations = {}
-        layer_importance = {}
+    def lime_attribution_contrastive(
+        self,
+        sequence: str,
+        target_token_idx: int,
+        n_samples: int = 200
+    ) -> np.ndarray:
+        """LIME attribution using contrastive perturbation strategy."""
+        from sklearn.linear_model import Ridge
 
-        def capture_activations_hook(layer_name):
-            def hook(module, input, output):
-                layer_activations[layer_name] = output.detach().clone()
-                return output
-            return hook
+        token_ids = self._prepare_input(sequence).squeeze(0)
+        seq_len = len(token_ids)
+        vocab_size = len(self.stoi)
+        
+        # Initialize storage
+        perturbed_data = np.zeros((n_samples, seq_len))
+        predictions = []
+        
+        for sample_idx in range(n_samples):
+            # Generate perturbation mask and alternative tokens in one step
+            perturb_mask = np.random.binomial(1, 0.5, size=seq_len)
+            perturbed_seq = token_ids.clone()
+            
+            # For positions to perturb, replace with random alternative
+            mask_positions = np.where(perturb_mask == 1)[0]
+            for pos in mask_positions:
+                # Get all tokens except current one
+                alt_tokens = [t for t in range(vocab_size) if t != token_ids[pos].item()]
+                perturbed_seq[pos] = np.random.choice(alt_tokens)
+            
+            # Record perturbations and get prediction
+            perturbed_data[sample_idx] = perturb_mask
+            with torch.no_grad():
+                predictions.append(
+                    self._get_score(perturbed_seq.unsqueeze(0), target_token_idx, as_prob=True)
+                )
 
-        # Register hooks for each layer to capture activations
-        hooks = [
-            (block, capture_activations_hook(f"layer_{i}"))
-            for i, block in enumerate(self._get_transformer_layers())
-        ]
-        with self._register_hooks(hooks):
-            base_score = self._get_score(input_tensor, target_token_idx)
+        # Fit interpretable model
+        model_lime = Ridge(alpha=1.0)
+        model_lime.fit(perturbed_data, predictions)
+        
+        return -model_lime.coef_
 
-        # Perturb each layer and measure effect
-        for i, block in enumerate(self._get_transformer_layers()):
-            layer_name = f"layer_{i}"
+    # def layer_perturbation_analysis(
+    #     self,
+    #     sequence: str,
+    #     target_token_idx: int
+    # ) -> dict[str, float]:
+    #     """Analyze layer importance by perturbing intermediate activations.
+        
+    #     For each layer, measures the effect of adding noise to its activations
+    #     on the model's prediction.
+        
+    #     Args:
+    #         sequence: Input sequence to analyze
+    #         target_token_idx: Index of target token in vocabulary
+            
+    #     Returns:
+    #         Dictionary mapping layer names to importance scores
+    #     """
+    #     input_tensor = self._prepare_input(sequence)
+    #     layer_activations = {}
+    #     layer_importance = {}
 
-            def perturb_hook(module, input, output):
-                activation = layer_activations[layer_name]
-                noise = torch.randn_like(activation) * activation.std() * 0.1
-                return activation + noise
+    #     def capture_activations_hook(layer_name: str) -> callable:
+    #         def hook(
+    #             module: torch.nn.Module,
+    #             input: tuple[torch.Tensor, ...],
+    #             output: torch.Tensor
+    #         ) -> torch.Tensor:
+    #             layer_activations[layer_name] = output.detach().clone()
+    #             return output
+    #         return hook
 
-            with self._register_hooks([(block, perturb_hook)]):
-                perturbed_score = self._get_score(input_tensor, target_token_idx)
-            layer_importance[layer_name] = abs(base_score - perturbed_score)
-        return layer_importance
+    #     # Register hooks for each layer to capture activations
+    #     hooks = [
+    #         (block, capture_activations_hook(f"layer_{i}"))
+    #         for i, block in enumerate(self._get_transformer_layers())
+    #     ]
+    #     with self._register_hooks(hooks):
+    #         base_score = self._get_score(input_tensor, target_token_idx)
+
+    #     # Perturb each layer and measure effect
+    #     for i, block in enumerate(self._get_transformer_layers()):
+    #         layer_name = f"layer_{i}"
+
+    #         def perturb_hook(
+    #             module: torch.nn.Module,
+    #             input: tuple[torch.Tensor, ...],
+    #             output: torch.Tensor
+    #         ) -> torch.Tensor:
+    #             activation = layer_activations[layer_name]
+    #             noise = torch.randn_like(activation) * activation.std() * 0.1
+    #             return activation + noise
+
+    #         with self._register_hooks([(block, perturb_hook)]):
+    #             perturbed_score = self._get_score(input_tensor, target_token_idx)
+    #         layer_importance[layer_name] = abs(base_score - perturbed_score)
+    #     return layer_importance
 
     def layer_gradient_attribution(self, sequence, target_token_idx):
         """Compute gradient-based attributions for specified layers."""
@@ -276,23 +522,25 @@ class PerturbationAnalyzer:
             return attributions
 
     def integrated_gradients_attribution(
-        self, 
-        sequence,
-        target_token_idx,
-        layers_of_interest=None,
-        steps=20,
-        reference_sequence='RRRRRR',
-    ):
-        """
-        Compute integrated gradients attribution for specified layers.
-
+        self,
+        sequence: str,
+        target_token_idx: int,
+        layers_of_interest: Optional[dict[str, torch.nn.Module]] = None,
+        steps: int = 20,
+        reference_sequence: str = 'RRRRRR'
+    ) -> dict[str, np.ndarray]:
+        """Compute integrated gradients attribution for specified layers.
+        
+        Implements the integrated gradients method by interpolating between
+        reference and input embeddings and accumulating gradients.
+        
         Args:
-            sequence: Input token sequence
-            target_token_idx: Target token index for attribution
-            layers_of_interest: Dict mapping layer names to modules (default: token and position embeddings)
-            steps: Number of interpolation steps between baseline and input
-            reference_sequence: Baseline sequence for integrated gradients
-
+            sequence: Input sequence to analyze
+            target_token_idx: Index of target token in vocabulary
+            layers_of_interest: Dict mapping layer names to modules
+            steps: Number of interpolation steps
+            reference_sequence: Baseline sequence for interpolation
+            
         Returns:
             Dictionary mapping layer names to attribution scores
         """
@@ -311,21 +559,30 @@ class PerturbationAnalyzer:
         with torch.no_grad():
             input_emb = self.model.transformer.wte(input_tensor)
             reference_emb = self.model.transformer.wte(baseline)
-            pos_emb = self.model.transformer.wpe(torch.arange(len(input_tensor), device=self.model.device).unsqueeze(0))
+            pos_emb = self.model.transformer.wpe(
+                torch.arange(
+                    len(input_tensor),
+                    device=self.model.device
+                ).unsqueeze(0)
+            )
 
         # Initialize storage for integrated gradients
         integrated_grads = {name: None for name in layers_of_interest}
-        # Special handling for token embedding gradients
-        token_emb_grads = []
-
+        
         # Capture reference activations for all layers
         reference_activations = {}
         with self._capture_gradients(layers_of_interest) as (ref_acts, _):
             # Run forward pass with reference input
-            def ref_embedding_hook(module, input, output):
+            def ref_embedding_hook(
+                module: torch.nn.Module,
+                input: tuple[torch.Tensor, ...],
+                output: torch.Tensor
+            ) -> torch.Tensor:
                 return reference_emb
-
-            ref_hook = self.model.transformer.wte.register_forward_hook(ref_embedding_hook)
+            
+            ref_hook = self.model.transformer.wte.register_forward_hook(
+                ref_embedding_hook
+            )
             try:
                 self.model(baseline)
                 # Store reference activations
@@ -345,20 +602,25 @@ class PerturbationAnalyzer:
             # Create interpolated embeddings
             interpolated_emb = reference_emb + alpha * (input_emb - reference_emb)
             interpolated_emb.requires_grad_(True)
-
-            # Combined embeddings (token + positional)
-            combined_emb = interpolated_emb + pos_emb
-
+            
             # Use existing capture_gradients method for all layers
-            with self._capture_gradients(layers_of_interest) as (step_activations, step_gradients):
-                # Forward pass through the model
-                # First replace the token embeddings with our interpolated version
-                def embedding_hook(module, input, output):
-                    # Return the interpolated embeddings directly
+            with self._capture_gradients(layers_of_interest) as (
+                step_activations,
+                step_gradients
+            ):
+                # Forward pass through the model replacing token embeddings with interpolated version
+                def embedding_hook(
+                    module: torch.nn.Module,
+                    input: tuple[torch.Tensor, ...],
+                    output: torch.Tensor
+                ) -> torch.Tensor:
                     return interpolated_emb
+                
                 # Register hook to replace token embeddings
-                token_emb_hook = self.model.transformer.wte.register_forward_hook(embedding_hook)
-
+                token_emb_hook = self.model.transformer.wte.register_forward_hook(
+                    embedding_hook
+                )
+                
                 try:
                     # Run normal forward pass
                     logits, _ = self.model(input_tensor)
@@ -366,30 +628,27 @@ class PerturbationAnalyzer:
                     # Set up target for backpropagation (one-hot for target token)
                     target = torch.zeros_like(logits)
                     target[0, -1, target_token_idx] = 1.0
-
-                    # Backward pass with retain_graph=True to ensure gradients flow
+                    
+                    # Backward pass with retain_graph=True
                     logits.backward(target, retain_graph=True)
 
                     # Store token embedding gradients directly from interpolated_emb
                     if interpolated_emb.grad is not None:
-                        token_emb_grads.append(interpolated_emb.grad.clone())
-                        # Also store in step_gradients for consistency
                         step_gradients['token_embedding'] = [interpolated_emb.grad.clone()]
-
-                    # Add step gradients to integrated gradients for all layers
+                    
+                    # Add step gradients to integrated gradients
                     for name in step_gradients:
                         if step_gradients[name]:
                             grad = step_gradients[name][0]
-
-                            # For intermediate layers, multiply by the difference from reference
+                            
+                            # For intermediate layers, multiply by difference
                             if name != 'token_embedding':
-                                # Get the activation for this layer
-                                if step_activations[name] and name in reference_activations:
+                                if (step_activations[name] and
+                                    name in reference_activations):
                                     act = step_activations[name][0]
                                     ref_act = reference_activations[name]
-                                    # Multiply gradient by difference from reference
                                     grad = grad * (act - ref_act)
-
+                            
                             if integrated_grads[name] is None:
                                 integrated_grads[name] = (grad / steps).clone()
                             else:
@@ -409,28 +668,34 @@ class PerturbationAnalyzer:
         # Restore model's original training mode
         self.model.train(original_mode)
 
-        # Calculate integrated gradients for token embeddings
-        if token_emb_grads:
-            integrated_grads['token_embedding'] = sum(token_emb_grads) / len(token_emb_grads)
-
         # Calculate attributions
         attributions = {}
-
-        # For token embeddings, multiply by (input - reference)
-        if 'token_embedding' in integrated_grads and integrated_grads['token_embedding'] is not None:
-            attribution = integrated_grads['token_embedding'] * (input_emb - reference_emb)
-            attributions['token_embedding'] = attribution.sum(dim=-1).cpu().numpy().squeeze()
-
-        # For other layers, use the gradients directly (they're already multiplied by activation differences)
         for name in integrated_grads:
-            if name != 'token_embedding' and integrated_grads[name] is not None:
-                # Sum over all dimensions except sequence length
-                attributions[name] = integrated_grads[name].sum(dim=-1).cpu().numpy().squeeze()
+            if integrated_grads[name] is not None:
+                if name == 'token_embedding':
+                    # Special handling for token embeddings
+                    attribution = integrated_grads[name] * (input_emb - reference_emb)
+                else:
+                    attribution = integrated_grads[name]
+                attributions[name] = attribution.sum(dim=-1).cpu().numpy().squeeze()
 
         return attributions
 
-    def plot_sequence_attribution(self, ax, sequence, target_token, attribution_value):
-
+    def plot_sequence_attribution(
+        self,
+        ax: plt.Axes,
+        sequence: str,
+        target_token: str,
+        attribution_value: np.ndarray
+    ) -> None:
+        """Plot attribution scores for a sequence.
+        
+        Args:
+            ax: Matplotlib axes to plot on
+            sequence: Input sequence
+            target_token: Target token being predicted
+            attribution_value: Attribution scores for each position
+        """
         hm = sns.heatmap(
             attribution_value.reshape(1, -1),
             ax=ax,
@@ -450,7 +715,22 @@ class PerturbationAnalyzer:
         ax.set_yticks([0.5], labels=[target_token], rotation=0)
         ax.set_xticks([])
 
-    def get_attribution_all_targets(self, sequence, method='contrastive', **kwargs):
+    def get_attribution_all_targets(
+        self,
+        sequence: str,
+        method: str = 'contrastive',
+        **kwargs
+    ) -> dict[str, dict[str, np.ndarray]]:
+        """Get attribution scores for all possible target tokens.
+        
+        Args:
+            sequence: Input sequence to analyze
+            method: Attribution method to use
+            **kwargs: Additional arguments for attribution method
+            
+        Returns:
+            Dictionary mapping target tokens to attribution scores
+        """
         attribution_func = self._get_attribution_function(method)
 
         attributions = {}
@@ -462,21 +742,44 @@ class PerturbationAnalyzer:
             attributions[t] = attribution
         return attributions
 
-    def plot_attribution_all_targets(self, sequences, method='contrastive', ncols=1, **kwargs):
+    def plot_attribution_all_targets(
+        self,
+        sequences: Union[str, list[str]],
+        method: str = 'contrastive',
+        ncols: int = 1,
+        **kwargs
+    ) -> tuple[plt.Figure, list[plt.Axes]]:
+        """Plot attribution scores for all targets and sequences.
+        
+        Args:
+            sequences: Single sequence or list of sequences to analyze
+            method: Attribution method to use
+            ncols: Number of columns in plot
+            **kwargs: Additional arguments for attribution method
+            
+        Returns:
+            Tuple of (figure, axes) for the plot
+        """
         if not isinstance(sequences, list):
             sequences = [sequences]
 
         n_sequences = len(sequences)
 
-        # Get all attributions for all sequences up front.
+        # Get all attributions for all sequences up front
         attributions = {}
         for sequence in sequences:
-            attributions[sequence] = self.get_attribution_all_targets(sequence, method, **kwargs)
+            attributions[sequence] = self.get_attribution_all_targets(
+                sequence,
+                method,
+                **kwargs
+            )
 
         layers = list(attributions[sequences[0]]['R'].keys())
         n_layers = len(layers)
 
-        fig = plt.figure(figsize=(2.1*n_sequences, 0.3*len(self.vocab)*n_layers))
+        fig = plt.figure(
+            figsize=(2.1*n_sequences, 0.3*len(self.vocab)*n_layers)
+        )
         subfigs = fig.subfigures(nrows=n_layers, hspace=0.04)
 
         if n_layers == 1:
@@ -496,7 +799,12 @@ class PerturbationAnalyzer:
 
             for ax0, sequence in zip(axs, sequences):
                 for t, ax in zip(self.vocab, ax0):
-                    self.plot_sequence_attribution(ax, sequence, t, attributions[sequence][t][layer])
+                    self.plot_sequence_attribution(
+                        ax,
+                        sequence,
+                        t,
+                        attributions[sequence][t][layer]
+                    )
 
                 if layer == layers[0]:
                     ax0[0].set_title(sequence, y=1.1 + ((n_layers > 1)/2))
@@ -514,12 +822,31 @@ class PerturbationAnalyzer:
 
         return fig, axs
 
-    def plot_attribution_contiguous_sequences(self, sequences, method='contrastive', **kwargs):
-
+    def plot_attribution_contiguous_sequences(
+        self,
+        sequences: list[str],
+        method: str = 'contrastive',
+        **kwargs
+    ) -> tuple[plt.Figure, list[plt.Axes]]:
+        """Plot attribution scores for sequences with arrows between them.
+        
+        Args:
+            sequences: List of sequences to analyze
+            method: Attribution method to use
+            **kwargs: Additional arguments for attribution method
+            
+        Returns:
+            Tuple of (figure, axes) for the plot
+        """
         n_sequences = len(sequences)
         n_layers = len(self.layers)
         y = 1 + ((n_layers > 1) * 0.03)
-        fig, axs = self.plot_attribution_all_targets(sequences, method, ncols=n_sequences, **kwargs)
+        fig, axs = self.plot_attribution_all_targets(
+            sequences,
+            method,
+            ncols=n_sequences,
+            **kwargs
+        )
 
         if n_sequences == 1:
             return fig, axs
@@ -533,11 +860,18 @@ class PerturbationAnalyzer:
             dx = x2 - x1
 
             # Create a line with an arrow marker
-            line = Line2D([x1 + (0.4*dx), x2 - (0.1*dx)], [y, y],
-                        marker='>', markeredgecolor='gray', markevery=[-1],
-                        color='gray', linewidth=1.5,  markersize=6,
-                        figure=fig,
-                        transform=fig.transFigure)
+            line = Line2D(
+                [x1 + (0.4*dx), x2 - (0.1*dx)],
+                [y, y],
+                marker='>',
+                markeredgecolor='gray',
+                markevery=[-1],
+                color='gray',
+                linewidth=1.5,
+                markersize=6,
+                figure=fig,
+                transform=fig.transFigure
+            )
             fig.lines.append(line)
 
         return fig, axs
