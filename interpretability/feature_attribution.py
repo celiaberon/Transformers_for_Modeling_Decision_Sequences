@@ -277,12 +277,11 @@ class PerturbationAnalyzer:
 
     def integrated_gradients_attribution(
         self, 
-        sequence, 
-        target_token_idx, 
-        layers_of_interest=None, 
-        steps=20, 
+        sequence,
+        target_token_idx,
+        layers_of_interest=None,
+        steps=20,
         reference_sequence='RRRRRR',
-        as_prob=False
     ):
         """
         Compute integrated gradients attribution for specified layers.
@@ -293,7 +292,6 @@ class PerturbationAnalyzer:
             layers_of_interest: Dict mapping layer names to modules (default: token and position embeddings)
             steps: Number of interpolation steps between baseline and input
             reference_sequence: Baseline sequence for integrated gradients
-            as_prob: Whether to use probability instead of logit
 
         Returns:
             Dictionary mapping layer names to attribution scores
@@ -320,6 +318,23 @@ class PerturbationAnalyzer:
         # Special handling for token embedding gradients
         token_emb_grads = []
 
+        # Capture reference activations for all layers
+        reference_activations = {}
+        with self._capture_gradients(layers_of_interest) as (ref_acts, _):
+            # Run forward pass with reference input
+            def ref_embedding_hook(module, input, output):
+                return reference_emb
+
+            ref_hook = self.model.transformer.wte.register_forward_hook(ref_embedding_hook)
+            try:
+                self.model(baseline)
+                # Store reference activations
+                for name in ref_acts:
+                    if ref_acts[name]:
+                        reference_activations[name] = ref_acts[name][0].detach().clone()
+            finally:
+                ref_hook.remove()
+
         # For each interpolation step
         for step in range(steps):
             self.model.zero_grad()
@@ -330,53 +345,62 @@ class PerturbationAnalyzer:
             # Create interpolated embeddings
             interpolated_emb = reference_emb + alpha * (input_emb - reference_emb)
             interpolated_emb.requires_grad_(True)
-            
+
             # Combined embeddings (token + positional)
             combined_emb = interpolated_emb + pos_emb
-            
+
             # Use existing capture_gradients method for all layers
             with self._capture_gradients(layers_of_interest) as (step_activations, step_gradients):
                 # Forward pass through the model
                 # First replace the token embeddings with our interpolated version
                 def embedding_hook(module, input, output):
+                    # Return the interpolated embeddings directly
                     return interpolated_emb
-                
                 # Register hook to replace token embeddings
                 token_emb_hook = self.model.transformer.wte.register_forward_hook(embedding_hook)
-                
+
                 try:
                     # Run normal forward pass
                     logits, _ = self.model(input_tensor)
-                    
+
                     # Set up target for backpropagation (one-hot for target token)
                     target = torch.zeros_like(logits)
                     target[0, -1, target_token_idx] = 1.0
-                    
+
                     # Backward pass with retain_graph=True to ensure gradients flow
                     logits.backward(target, retain_graph=True)
-                    
-                    # Store token embedding gradients
+
+                    # Store token embedding gradients directly from interpolated_emb
                     if interpolated_emb.grad is not None:
                         token_emb_grads.append(interpolated_emb.grad.clone())
-                    
+                        # Also store in step_gradients for consistency
+                        step_gradients['token_embedding'] = [interpolated_emb.grad.clone()]
+
                     # Add step gradients to integrated gradients for all layers
                     for name in step_gradients:
                         if step_gradients[name]:
                             grad = step_gradients[name][0]
-                            # Debug print for gradient magnitudes
-                            print(f"Step {step}, Layer {name} gradient norm: {grad.norm().item():.6f}")
-                            
+
+                            # For intermediate layers, multiply by the difference from reference
+                            if name != 'token_embedding':
+                                # Get the activation for this layer
+                                if step_activations[name] and name in reference_activations:
+                                    act = step_activations[name][0]
+                                    ref_act = reference_activations[name]
+                                    # Multiply gradient by difference from reference
+                                    grad = grad * (act - ref_act)
+
                             if integrated_grads[name] is None:
                                 integrated_grads[name] = (grad / steps).clone()
                             else:
                                 integrated_grads[name] += (grad / steps).clone()
                         else:
                             print(f"Warning: No gradients captured for layer {name} at step {step}")
-                
+
                 finally:
                     # Clean up the token embedding hook
                     token_emb_hook.remove()
-                    
+
                     # Clear any remaining gradients
                     self.model.zero_grad()
                     if interpolated_emb.grad is not None:
@@ -397,12 +421,12 @@ class PerturbationAnalyzer:
             attribution = integrated_grads['token_embedding'] * (input_emb - reference_emb)
             attributions['token_embedding'] = attribution.sum(dim=-1).cpu().numpy().squeeze()
 
-        # For other layers, use the gradients directly
+        # For other layers, use the gradients directly (they're already multiplied by activation differences)
         for name in integrated_grads:
             if name != 'token_embedding' and integrated_grads[name] is not None:
+                # Sum over all dimensions except sequence length
                 attributions[name] = integrated_grads[name].sum(dim=-1).cpu().numpy().squeeze()
 
-        print(attributions)
         return attributions
 
     def plot_sequence_attribution(self, ax, sequence, target_token, attribution_value):
