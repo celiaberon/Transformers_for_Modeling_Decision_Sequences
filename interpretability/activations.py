@@ -1,10 +1,10 @@
 """Module for analyzing model activations across different layers."""
 
-from dataclasses import dataclass
 from typing import Any, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
 import torch
 from sklearn.decomposition import PCA
@@ -15,7 +15,6 @@ from interpretability.interp_helpers import (embed_sequence, predict_token,
 from transformer.transformer import MLP
 
 
-@dataclass
 class DimensionalityReductionConfig:
     """Configuration for activation analysis.
 
@@ -25,10 +24,18 @@ class DimensionalityReductionConfig:
         n_components: Number of components for dimensionality reduction
         method: Embedding method ('pca' or 'tsne')
     """
-    token_pos: int = -1
-    sequence_method: str = 'token'
-    n_components: int = 4
-    method: str = 'pca'
+
+    def __init__(
+        self,
+        token_pos: int = -1,
+        sequence_method: str = 'token',
+        n_components: int = 4,
+        method: str = 'pca'
+    ):
+        self.token_pos = token_pos
+        self.sequence_method = sequence_method
+        self.n_components = n_components
+        self.method = method
 
 
 class ActivationAnalyzer:
@@ -212,6 +219,164 @@ class ActivationAnalyzer:
             max_activating_seqs[neuron_idx] = sorted_seqs[:top_n]
 
         return max_activating_seqs
+
+    def get_average_sequence(
+        self,
+        token_counts_df,
+        single_threshold=0.6,
+        joint_threshold=0.4
+    ) -> list[str]:
+        """Extract tokens based on probability rules:
+        1. If highest prob token > single_threshold, use that token
+        2. If top two tokens together > joint_threshold, use "(token1/token2)"
+        3. Otherwise use "-"
+
+        Args:
+            token_counts_df: DataFrame where rows are sequence positions, columns
+                are tokens, and values are probabilities
+            single_threshold: Threshold for using a single token
+            joint_threshold: Threshold for using a pair of tokens
+
+        Returns:
+            A list of tokens, token pairs, or dashes for each position
+        """
+        token_sequence = []
+
+        for idx, row in token_counts_df.iterrows():
+            # Sort the tokens by probability in descending order
+            sorted_tokens = row.sort_values(ascending=False)
+
+            top_token = sorted_tokens.index[0]
+            top_prob = sorted_tokens.iloc[0]
+
+            # If the top token is confident enough, use it
+            if top_prob > single_threshold:
+                token_sequence.append(top_token)
+            else:
+                # Check if top two tokens indicate specific uncertainty
+                second_token = sorted_tokens.index[1]
+                second_prob = sorted_tokens.iloc[1]
+
+                if (top_prob > joint_threshold and
+                        second_prob > joint_threshold):
+                    # Model is specifically uncertain between two tokens
+                    token_sequence.append(f"({top_token}/{second_token})")
+                else:
+                    # Model is uncertain across many tokens
+                    token_sequence.append('-')
+
+        return ''.join(token_sequence)
+
+    def count_tokens(self, seqs: list[str]) -> pd.DataFrame:
+        """Count token frequencies at each position across a list of sequences.
+
+        Args:
+            seqs: List of sequences to analyze
+
+        Returns:
+            DataFrame with token counts at each position
+        """
+
+        token_counts = []
+        for pos in range(len(seqs[0])):  # Assuming all sequences have same length
+            pos_counts = {'R': 0, 'r': 0, 'L': 0, 'l': 0}
+            for seq in seqs:
+                pos_counts[seq[pos]] += 1
+            token_counts.append(pos_counts)
+
+        return pd.DataFrame(token_counts)
+
+    def describe_pattern_verbose(
+        self,
+        token_counts: pd.DataFrame,
+        layer: str,
+        neuron_idx: int,
+        seqs: list[str]
+    ) -> None:
+        """Analyze if this neuron might be detecting specific patterns"""
+        print(f"\nPatterns detected by {layer} layer, Neuron {neuron_idx}:")
+
+        # Check for position-specific token preferences
+        for row, freq in token_counts.iterrows():
+            if any(freq > 0.7):
+                max_token = freq[freq > 0.7].index[0]
+                print(f"Position {row}: Strong preference for '{max_token}'")
+
+        # Check for contextual patterns
+        # Check if neuron responds to recent history
+        last_tokens = [seq[-1] for seq in seqs]
+        if all(token in ['R', 'r'] for token in last_tokens) or all(token in ['L', 'l'] for token in last_tokens):
+            print("→ This neuron strongly responds to the type of the most recent decision (R/r vs L/l)")
+
+        # Check for alternating patterns
+        alternating_count = sum(1 for seq in seqs if 'RL' in seq or 'LR' in seq)
+        if alternating_count >= len(seqs) * 0.7:
+            print("→ This neuron may be detecting alternating patterns between R and L")
+
+        # Check for repeated patterns
+        repeat_count = sum(1 for seq in seqs if 'RR' in seq or 'LL' in seq)
+        if repeat_count >= len(seqs) * 0.7:
+            print("→ This neuron may be detecting repeated tokens of the same type")
+
+    def analyze_neuron_patterns(
+        self,
+        max_activations: dict[str, dict[str, list[tuple[str, float]]]],
+        layer_name: str,
+        neuron_idx: int,
+        ax: plt.Axes | None = None,
+        verbose: bool = True,
+        **kwargs
+    ) -> tuple[plt.Axes, pd.DataFrame]:
+        """Analyze patterns in sequences that maximally activate a specific neuron.
+
+        Args:
+            max_activations: Dictionary mapping layers and neurons to sequences
+                that maximally activate them
+            layer_name: Name of layer to analyze
+            neuron_idx: Index of neuron to analyze
+            ax: Optional matplotlib axes to plot on
+            verbose: Whether to print detailed pattern analysis
+            **kwargs: Additional arguments passed to seaborn heatmap
+
+        Returns:
+            Tuple of (matplotlib axes, token counts DataFrame)
+        """
+        # Get sequences that maximally activate this neuron
+        max_seqs = [seq for seq, _ in max_activations[layer_name][neuron_idx]]
+
+        token_counts = self.count_tokens(max_seqs)
+
+        # Normalize counts
+        token_counts = token_counts.div(token_counts.sum(axis=1), axis=0)
+
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(4, 3))
+            ax.set(
+                title=(f'{layer_name.capitalize()} Layer, '
+                       f'Neuron {neuron_idx} - Token Patterns')
+            )
+            if verbose:
+                self.describe_pattern_verbose(
+                    token_counts,
+                    layer_name,
+                    neuron_idx,
+                    max_seqs
+                )
+
+        sns.heatmap(
+            token_counts.T,
+            cmap='viridis',
+            annot=False,
+            fmt='.2f',
+            ax=ax,
+            vmin=0,
+            vmax=1,
+            **kwargs
+        )
+
+        ax.set(xlabel='Position in Sequence', ylabel='Token')
+
+        return ax, token_counts
 
     def calculate_selectivity(
         self,
@@ -580,7 +745,7 @@ class ActivationAnalyzer:
             fig, axs1 = plt.subplots(
                 ncols=n_layers,
                 figsize=(n_layers * 3, 2.5),
-                layout='constrained'
+                # layout='constrained'
             )
             axs2 = None
 
@@ -633,7 +798,7 @@ class ActivationAnalyzer:
             ax.set(
                 title=layer.capitalize(),
                 xlabel='Dim 1' if j == 0 else '',
-                ylabel='Dim 2' if j == 0 else ''
+                ylabel='Dim 2'
             )
 
             # Plot variance explained if requested
@@ -646,20 +811,20 @@ class ActivationAnalyzer:
                     color='red'
                 )
                 axs2[j].set(
-                    xlabel='Dimension' if j == 0 else '',
+                    xlabel='Dimension',
                     xticks=range(1, config.n_components + 1),
                     ylabel='Explained Variance' if j == 0 else '',
                     ylim=(0, 1.05)
                 )
 
         title = (
-            f'{self.model_component.upper()} Activations with '
+            f'{self.model_component} Activations\n with '
             f'{config.sequence_method} method'
         )
-        fig.suptitle(title)
-        plt.subplots_adjust(top=0.9)
+        fig.suptitle(title, y=0.9)
+        # plt.subplots_adjust(top=0.98)
         sns.despine()
-
+        plt.tight_layout()
         return fig, (axs1, axs2)
 
     def plot_pca_across_trials(
@@ -686,7 +851,7 @@ class ActivationAnalyzer:
             layers = [layers]
 
         # Just for aesthetics in the PCA plot
-        fake_counts = [100000]
+        fake_counts = [10000]
         fake_counts.extend([1] * (len(sequences) - 1))
 
         # Create base plot with all layers
@@ -752,6 +917,45 @@ class ActivationAnalyzer:
         )
         return fig, axs
 
+    def create_mlp_visualization(
+        self,
+        fig_title: str = None
+    ) -> tuple[plt.Figure, dict[str, list[plt.Axes]]]:
+        """Create a matplotlib figure with subfigures for neural network visualization.
+
+        Args:
+            fig_title: Overall figure title
+
+        Returns:
+            Tuple of (figure object, dict mapping layer names to axes lists)
+        """
+        n_layers = len(self.layer_composition)
+
+        figsize = (max(self.layer_composition.values()) * 1, n_layers * 1.8)
+        fig = plt.figure(figsize=figsize, constrained_layout=True)
+
+        if fig_title:
+            fig.suptitle(fig_title, fontsize=12)
+
+        subfigs = fig.subfigures(n_layers, 1)  # subfigure for each layer
+
+        if n_layers == 1:
+            subfigs = [subfigs]
+
+        axes_dict = {}
+
+        # Create axes for each neuron in each layer
+        for subfig, (layer_name, n_neurons) in zip(subfigs, self.layer_composition.items()):
+            title = f"{layer_name.capitalize()} Layer ({n_neurons} neurons)"
+            subfig.suptitle(title, fontsize=12)
+
+            axes = subfig.subplots(nrows=1, ncols=n_neurons)
+            if n_neurons == 1:
+                axes = [axes]
+            axes_dict[layer_name] = axes
+
+        return fig, axes_dict
+
 
 class MLPAnalyzer(ActivationAnalyzer):
     def __init__(
@@ -768,7 +972,7 @@ class MLPAnalyzer(ActivationAnalyzer):
             layers: Optional list of layers to analyze
         """
         super().__init__(model)
-        self.model_component = 'mlp'
+        self.model_component = 'MLP'
         self.layer_composition = self._get_layer_composition(config)
         self.layers = layers or list(self.layer_composition.keys())
 
@@ -804,7 +1008,7 @@ class EmbeddingAnalyzer(ActivationAnalyzer):
             layers: Optional list of layers to analyze
         """
         super().__init__(model)
-        self.model_component = 'embedding'
+        self.model_component = 'Embedding'
         self.layer_composition = self._get_layer_composition(config)
         self.layers = layers or list(self.layer_composition.keys())
 
