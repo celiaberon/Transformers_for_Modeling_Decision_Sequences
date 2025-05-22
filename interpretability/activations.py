@@ -1,44 +1,19 @@
 """Module for analyzing model activations across different layers."""
 
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
+from analyzer import BaseAnalyzer
 
-from interpretability.interp_helpers import (embed_sequence, predict_token,
-                                             tokenize)
+from interpretability.interp_helpers import embed_sequence
 from transformer.transformer import MLP
 
 
-class DimensionalityReductionConfig:
-    """Configuration for activation analysis.
-
-    Attributes:
-        token_pos: Position in sequence to analyze
-        sequence_method: Method for sequence embedding
-        n_components: Number of components for dimensionality reduction
-        method: Embedding method ('pca' or 'tsne')
-    """
-
-    def __init__(
-        self,
-        token_pos: int = -1,
-        sequence_method: str = 'token',
-        n_components: int = 4,
-        method: str = 'pca'
-    ):
-        self.token_pos = token_pos
-        self.sequence_method = sequence_method
-        self.n_components = n_components
-        self.method = method
-
-
-class ActivationAnalyzer:
+class ActivationAnalyzer(BaseAnalyzer):
     """Class for analyzing model activations across different layers.
 
     This class provides methods to capture, analyze and visualize activations
@@ -49,14 +24,24 @@ class ActivationAnalyzer:
         _hooks (list[torch.utils.hooks.RemovableHandle]): Storage for hooks
     """
 
-    def __init__(self, model: torch.nn.Module):
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        config: Any,
+        layers: Optional[list[str]] = None
+    ):
         """Initialize the activation analyzer.
 
         Args:
             model: The transformer model to analyze
+            config: Model configuration object
+            layers: Optional list of layers to analyze
         """
-        self.model = model
+        super().__init__(model)
         self._hooks: list[torch.utils.hooks.RemovableHandle] = []
+        self.model_component = 'Activation'  # Will be overridden by subclasses
+        self.layer_composition = self._get_layer_composition(config)
+        self.layers = layers or list(self.layer_composition.keys())
 
     def _get_layer_composition(self, config: Any) -> dict[str, int]:
         """Get the dimensions of each layer in the model component.
@@ -67,7 +52,9 @@ class ActivationAnalyzer:
         Returns:
             Dictionary mapping layer names to their dimensions
         """
-        pass
+        raise NotImplementedError(
+            "Subclasses must implement _get_layer_composition"
+        )
 
     def _setup_hooks(self) -> dict[str, list[np.ndarray]]:
         """Set up hooks to capture activations from model layers.
@@ -76,26 +63,20 @@ class ActivationAnalyzer:
             Dictionary to store captured activations
         """
         activations = {layer: [] for layer in self.layers}
+        if self.verbose:
+            print(f"Setting up hooks for {self.model_component} with layers: {self.layers}")
 
         def make_hook(layer_name: str):
-            def hook(
-                module: torch.nn.Module,
-                input: tuple[torch.Tensor, ...],
-                output: torch.Tensor
-            ) -> None:
+            def hook(module, input, output):
                 if layer_name == 'input':
-                    activations[layer_name].append(
-                        input[0].detach().cpu().numpy()
-                    )
+                    activations[layer_name].append(input[0].detach().cpu().numpy())
                 else:
-                    activations[layer_name].append(
-                        output.detach().cpu().numpy()
-                    )
+                    activations[layer_name].append(output.detach().cpu().numpy())
             return hook
 
         # Register hooks only for layers we want to track
         for block in self.model.transformer.h:
-            if self.model_component == 'mlp':
+            if self.model_component.lower() == 'mlp':
                 if 'input' in self.layers:
                     self._hooks.append(
                         block.mlp.c_fc.register_forward_hook(
@@ -114,24 +95,68 @@ class ActivationAnalyzer:
                             make_hook('output')
                         )
                     )
-
+        if self.verbose:
+            print(f"Registered {len(self._hooks)} hooks")
         return activations
+
+    def _validate_hook_outputs(
+        self,
+        raw_activations: dict[str, list[np.ndarray]],
+        expected_count: int,
+        layer_name: str | None = None
+    ) -> None:
+        """Validate that hooks captured the expected number of activations.
+        
+        Args:
+            raw_activations: Dictionary of captured activations
+            expected_count: Expected number of activation sets
+            layer_name: Optional specific layer to validate
+            
+        Raises:
+            ValueError: If activations were not captured correctly
+        """
+        layers_to_check = [layer_name] if layer_name else self.layers
+        for layer in layers_to_check:
+            if not raw_activations[layer]:
+                raise ValueError(f"No activations captured for layer {layer}")
+            if len(raw_activations[layer]) != 1:  # Should only have one forward pass
+                raise ValueError(
+                    f"Expected 1 forward pass for layer {layer}, "
+                    f"got {len(raw_activations[layer])}"
+                )
+            
+            # Validate shapes
+            act = raw_activations[layer][0]
+            if len(act.shape) != 3:
+                raise ValueError(
+                    f"Expected 3D activation tensor for layer {layer}, "
+                    f"got shape {act.shape}"
+                )
+            if act.shape[0] != expected_count:
+                raise ValueError(
+                    f"Expected batch size {expected_count} for layer {layer}, "
+                    f"got {act.shape[0]}"
+                )
 
     def get_activations(
         self,
-        input_seq: list[str]
+        sequences: list[str]
     ) -> dict[str, dict[str, np.ndarray]]:
-        """Capture activations for a list of input sequences.
-
+        """Get activations for all layers for a list of sequences.
+        
         Args:
-            input_seq: List of input sequences to analyze
-
+            sequences: List of sequences to analyze
+            
         Returns:
-            Dictionary mapping sequences to their layer activations
+            Dictionary mapping sequences to dictionaries of layer activations.
+            Structure: {seq: {layer: activation_array}}
         """
-        tokens = tokenize(input_seq)
-        activations = self._setup_hooks()
-
+        # Tokenize all sequences at once
+        tokens = self.tokenize(sequences)
+        
+        # Capture activations using hooks
+        raw_activations = self._setup_hooks()
+        
         # Store original training state
         was_training = self.model.training
 
@@ -140,23 +165,59 @@ class ActivationAnalyzer:
             self.model.eval()
             with torch.no_grad():
                 self.model(tokens)
+                
+                # Validate hook outputs
+                self._validate_hook_outputs(raw_activations, len(sequences))
         finally:
             # Restore original training state
             if was_training:
                 self.model.train()
 
             # Clean up hooks
+            i = 0
             for hook in self._hooks:
                 hook.remove()
-            self._hooks.clear()
+                i += 1
+                self._hooks.clear()
+                if self.verbose:
+                    print(f"Cleaned up {i} hooks")
 
-        # Reformat activations for easier interpretation
-        captured_activations = {seq: {} for seq in input_seq}
-        for layer, acts in activations.items():
-            for seq, act in zip(input_seq, acts[0]):
-                captured_activations[seq][layer] = act
+        # Convert raw activations to a more usable format
+        # raw_activations: {layer: [tensor[batch_size, seq_len, hidden_dim]]}
+        # -> {seq: {layer: activation_array}}
+        activations = {
+            seq: {
+                layer_name: acts[0][i]  # acts[0] gets the tensor, [i] gets i-th sequence
+                for layer_name, acts in raw_activations.items()
+            }
+            for i, seq in enumerate(sequences)
+        }
 
-        return captured_activations
+        return activations
+
+    def get_layer_activations(
+        self,
+        sequences: list[str],
+        layer: str
+    ) -> dict[str, np.ndarray]:
+        """Get activations for a specific layer for a list of sequences.
+        
+        Args:
+            sequences: List of sequences to analyze
+            layer: Layer to get activations from
+            
+        Returns:
+            Dictionary mapping sequences to their activation vectors for the
+            specified layer. Structure: {seq: activation_array}
+        """
+        # Get all layer activations
+        all_activations = self.get_activations(sequences)
+        
+        # Extract just the requested layer
+        return {
+            seq: acts[layer]
+            for seq, acts in all_activations.items()
+        }
 
     def get_activation_by_position(
         self,
@@ -190,7 +251,7 @@ class ActivationAnalyzer:
         """Find sequences that maximally activate each neuron.
 
         Args:
-            activations: Dictionary of captured activations
+            activations: Dictionary mapping sequences to their layer activations
             layer_name: Layer to analyze
             sequences: List of sequences to consider
             top_n: Number of top activating sequences to return
@@ -198,14 +259,18 @@ class ActivationAnalyzer:
         Returns:
             Dictionary mapping neuron indices to their top activating sequences
         """
-        layer_activations = activations[layer_name]
+        # Get activations for this layer
+        layer_acts = {
+            seq: acts[layer_name]
+            for seq, acts in activations.items()
+        }
         num_neurons = self.layer_composition[layer_name]
 
         max_activating_seqs = {}
         for neuron_idx in range(num_neurons):
             # Get activation of this neuron for each sequence
             neuron_acts = {
-                seq: layer_activations[seq][neuron_idx]
+                seq: layer_acts[seq][neuron_idx]
                 for seq in sequences
             }
 
@@ -267,25 +332,6 @@ class ActivationAnalyzer:
 
         return ''.join(token_sequence)
 
-    def count_tokens(self, seqs: list[str]) -> pd.DataFrame:
-        """Count token frequencies at each position across a list of sequences.
-
-        Args:
-            seqs: List of sequences to analyze
-
-        Returns:
-            DataFrame with token counts at each position
-        """
-
-        token_counts = []
-        for pos in range(len(seqs[0])):  # Assuming all sequences have same length
-            pos_counts = {'R': 0, 'r': 0, 'L': 0, 'l': 0}
-            for seq in seqs:
-                pos_counts[seq[pos]] += 1
-            token_counts.append(pos_counts)
-
-        return pd.DataFrame(token_counts)
-
     def describe_pattern_verbose(
         self,
         token_counts: pd.DataFrame,
@@ -302,21 +348,24 @@ class ActivationAnalyzer:
                 max_token = freq[freq > 0.7].index[0]
                 print(f"Position {row}: Strong preference for '{max_token}'")
 
-        # Check for contextual patterns
         # Check if neuron responds to recent history
         last_tokens = [seq[-1] for seq in seqs]
-        if all(token in ['R', 'r'] for token in last_tokens) or all(token in ['L', 'l'] for token in last_tokens):
-            print("→ This neuron strongly responds to the type of the most recent decision (R/r vs L/l)")
+        if (all(token in ['R', 'r'] for token in last_tokens) or 
+            all(token in ['L', 'l'] for token in last_tokens)):
+            print("→ This neuron strongly responds to the type of the most "
+                  "recent decision (R/r vs L/l)")
 
         # Check for alternating patterns
         alternating_count = sum(1 for seq in seqs if 'RL' in seq or 'LR' in seq)
         if alternating_count >= len(seqs) * 0.7:
-            print("→ This neuron may be detecting alternating patterns between R and L")
+            print("→ This neuron may be detecting alternating patterns "
+                  "between R and L")
 
         # Check for repeated patterns
         repeat_count = sum(1 for seq in seqs if 'RR' in seq or 'LL' in seq)
         if repeat_count >= len(seqs) * 0.7:
-            print("→ This neuron may be detecting repeated tokens of the same type")
+            print("→ This neuron may be detecting repeated tokens of "
+                  "the same type")
 
     def analyze_neuron_patterns(
         self,
@@ -413,6 +462,7 @@ class ActivationAnalyzer:
         if reference_tokens is None:
             reference_tokens = list(tokens - target_token)
 
+        # Get activations for target and reference tokens
         target_acts = [
             activations[seq] for seq in sequences
             if seq[token_pos] in target_token
@@ -668,255 +718,6 @@ class ActivationAnalyzer:
 
         return ax
 
-    def prepare_pca_embeddings(
-        self,
-        activations: dict[str, dict[str, np.ndarray]],
-        sequences: list[str],
-        layer: str,
-        config: DimensionalityReductionConfig
-    ) -> tuple[Any, np.ndarray]:
-        """Prepare PCA embeddings for visualization.
-        
-        Args:
-            activations: Dictionary of captured activations
-            sequences: List of sequences to analyze
-            layer: Layer to analyze
-            config: Analysis configuration
-            
-        Returns:
-            Tuple of (model, embeddings)
-        """
-        if config.sequence_method == 'token':
-            pos_acts = self.get_activation_by_position(
-                activations,
-                token_pos=config.token_pos
-            )
-            X = np.array([pos_acts[layer][seq] for seq in sequences])
-        elif config.sequence_method == 'concat':
-            X = np.concatenate([
-                activations[seq][layer].reshape(1, -1)
-                for seq in sequences
-            ], axis=0)
-
-        if config.method == 'tsne':
-            model = TSNE(n_components=2)
-            X_embedding = model.fit_transform(X)
-        elif config.method == 'pca':
-            model = PCA(n_components=config.n_components)
-            X_embedding = model.fit_transform(X)
-
-        return model, X_embedding
-
-    def plot_pca_by_layer(
-        self,
-        activations: dict[str, dict[str, np.ndarray]],
-        sequences: list[str],
-        config: DimensionalityReductionConfig,
-        counts: Optional[list[int]] = None,
-        layers: Optional[list[str]] = None,
-        variance_explained: bool = True
-    ) -> tuple[plt.Figure, tuple[np.ndarray, Optional[np.ndarray]]]:
-        """Plot PCA visualization of activations by layer.
-
-        Args:
-            activations: Dictionary of captured activations
-            sequences: List of sequences to analyze
-            config: Configuration for dimensionality reduction
-            counts: Optional list of counts for each sequence
-            layers: Layers to analyze. If None, uses all layers.
-            variance_explained: Whether to plot variance explained
-
-        Returns:
-            Figure and axes objects
-        """
-        if layers is None:
-            layers = self.layers
-        elif not isinstance(layers, list):
-            layers = [layers]
-
-        # Create figure with appropriate layout
-        n_layers = len(layers)
-        if variance_explained:
-            fig = plt.figure(figsize=(n_layers * 3, 4))
-            gs = fig.add_gridspec(2, n_layers, height_ratios=[2, 1])
-            axs1 = [fig.add_subplot(gs[0, i]) for i in range(n_layers)]
-            axs2 = [fig.add_subplot(gs[1, i]) for i in range(n_layers)]
-        else:
-            fig, axs1 = plt.subplots(
-                ncols=n_layers,
-                figsize=(n_layers * 3, 2.5),
-                # layout='constrained'
-            )
-            axs2 = None
-
-        if n_layers == 1:
-            axs1 = [axs1]
-            axs2 = [axs2] if axs2 is not None else None
-
-        # Normalize counts if provided
-        if counts is not None:
-            norm_counts = np.log1p(counts) / np.log1p(np.max(counts))
-
-        for j, (ax, layer) in enumerate(zip(axs1, layers)):
-            model, X_embedding = self.prepare_pca_embeddings(
-                activations,
-                sequences,
-                layer,
-                config
-            )
-
-            if counts is not None:
-                for i, (seq, c) in enumerate(zip(sequences, norm_counts)):
-                    ax.scatter(
-                        X_embedding[i, 0],
-                        X_embedding[i, 1],
-                        color='red' if seq[config.token_pos] in ('R', 'r')
-                        else 'blue',
-                        marker='o' if seq[config.token_pos] in ('R', 'L')
-                        else 'x',
-                        alpha=c,
-                        s=10 * c
-                    )
-                    if len(sequences) < 20:
-                        ax.annotate(
-                            seq[config.token_pos],
-                            (X_embedding[i, 0], X_embedding[i, 1]),
-                            fontsize=12
-                        )
-            else:
-                for i, seq in enumerate(sequences):
-                    ax.scatter(
-                        X_embedding[i, 0],
-                        X_embedding[i, 1],
-                        color='red' if seq[config.token_pos] in ('R', 'r')
-                        else 'blue',
-                        marker='o' if seq[config.token_pos] in ('R', 'L')
-                        else 'x',
-                        s=10
-                    )
-
-            ax.set(
-                title=layer.capitalize(),
-                xlabel='Dim 1' if j == 0 else '',
-                ylabel='Dim 2'
-            )
-
-            # Plot variance explained if requested
-            if (config.method == 'pca' and variance_explained
-                    and axs2 is not None):
-                axs2[j].plot(
-                    range(1, config.n_components + 1),
-                    np.cumsum(model.explained_variance_ratio_),
-                    marker='o',
-                    color='red'
-                )
-                axs2[j].set(
-                    xlabel='Dimension',
-                    xticks=range(1, config.n_components + 1),
-                    ylabel='Explained Variance' if j == 0 else '',
-                    ylim=(0, 1.05)
-                )
-
-        title = (
-            f'{self.model_component} Activations\n with '
-            f'{config.sequence_method} method'
-        )
-        fig.suptitle(title, y=0.9)
-        # plt.subplots_adjust(top=0.98)
-        sns.despine()
-        plt.tight_layout()
-        return fig, (axs1, axs2)
-
-    def plot_pca_across_trials(
-        self,
-        activations: dict[str, dict[str, np.ndarray]],
-        sequences: list[str],
-        block_sequences: list[list[str]],
-        layers: list[str] | str,
-        config: DimensionalityReductionConfig
-    ) -> tuple[plt.Figure, tuple[np.ndarray, Optional[np.ndarray]]]:
-        """Plot PCA visualization of activations across trials.
-
-        Args:
-            activations: Dictionary of captured activations
-            sequences: List of sequences to analyze
-            block_sequences: List of sequences for each block
-            layers: Layer(s) to analyze
-            config: Configuration for dimensionality reduction
-
-        Returns:
-            Figure and axes objects
-        """
-        if isinstance(layers, str):
-            layers = [layers]
-
-        # Just for aesthetics in the PCA plot
-        fake_counts = [10000]
-        fake_counts.extend([1] * (len(sequences) - 1))
-
-        # Create base plot with all layers
-        fig, axs = self.plot_pca_by_layer(
-            activations,
-            sequences,
-            config,
-            counts=fake_counts,
-            layers=layers,
-            variance_explained=False
-        )
-
-        # Get predicted tokens for block sequences
-        predicted_token = predict_token(self.model, block_sequences)
-        palette = sns.color_palette('magma', n_colors=len(block_sequences))
-
-        # Add transition points to each layer's plot
-        for i, layer in enumerate(layers):
-            # Compute PCA for this layer
-            pca, _ = self.prepare_pca_embeddings(
-                activations,
-                sequences,
-                layer,
-                config
-            )
-
-            # Get transition activations
-            transition_acts = self.get_activations(block_sequences.values)
-
-            # Prepare transition embeddings
-            if config.sequence_method == 'token':
-                pos_acts = self.get_activation_by_position(
-                    transition_acts,
-                    token_pos=config.token_pos
-                )
-                X = np.array([
-                    pos_acts[layer][seq]
-                    for seq in block_sequences
-                ])
-            elif config.sequence_method == 'concat':
-                X = np.concatenate([
-                    transition_acts[seq][layer].reshape(1, -1)
-                    for seq in block_sequences
-                ], axis=0)
-            transition_embeddings = pca.transform(X)
-
-            # Plot transition points
-            for j, (seq, t) in enumerate(zip(block_sequences, predicted_token)):
-                axs[0][i].scatter(
-                    transition_embeddings[j, 0],
-                    transition_embeddings[j, 1],
-                    color=palette[j],
-                    s=30,
-                    label=f'{seq}->({t})' if i == 0 else None
-                )
-
-        fig.legend(
-            bbox_to_anchor=(1.05, 0.1),
-            loc='lower left',
-            borderaxespad=0.,
-            fontsize=8,
-            frameon=False
-        )
-        return fig, axs
-
     def create_mlp_visualization(
         self,
         fig_title: str = None
@@ -945,7 +746,9 @@ class ActivationAnalyzer:
         axes_dict = {}
 
         # Create axes for each neuron in each layer
-        for subfig, (layer_name, n_neurons) in zip(subfigs, self.layer_composition.items()):
+        for subfig, (layer_name, n_neurons) in zip(
+            subfigs, self.layer_composition.items()
+        ):
             title = f"{layer_name.capitalize()} Layer ({n_neurons} neurons)"
             subfig.suptitle(title, fontsize=12)
 
@@ -971,10 +774,8 @@ class MLPAnalyzer(ActivationAnalyzer):
             config: Model configuration object
             layers: Optional list of layers to analyze
         """
-        super().__init__(model)
+        super().__init__(model, config, layers)
         self.model_component = 'MLP'
-        self.layer_composition = self._get_layer_composition(config)
-        self.layers = layers or list(self.layer_composition.keys())
 
     def _get_layer_composition(self, config: Any) -> dict[str, int]:
         """Get the dimensions of each layer in the model component.
@@ -1007,10 +808,8 @@ class EmbeddingAnalyzer(ActivationAnalyzer):
             config: Model configuration object
             layers: Optional list of layers to analyze
         """
-        super().__init__(model)
+        super().__init__(model, config, layers)
         self.model_component = 'Embedding'
-        self.layer_composition = self._get_layer_composition(config)
-        self.layers = layers or list(self.layer_composition.keys())
 
     def _get_layer_composition(self, config: Any) -> dict[str, int]:
         """Get the dimensions of each layer in the model component.
