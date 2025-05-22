@@ -4,10 +4,14 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
 import torch
 import torch.nn.functional as F
+from activations import EmbeddingAnalyzer
 from analyzer import BaseAnalyzer, BaseVisualizer
+
+import interpretability.interp_helpers as interp
 
 
 class AttentionVisualizer(BaseVisualizer):
@@ -189,9 +193,10 @@ class AttentionVisualizer(BaseVisualizer):
 class AttentionAnalyzer(BaseAnalyzer):
     """Analyzer for attention patterns in transformer models."""
     
-    def __init__(self, model):
+    def __init__(self, model, model_config):
         super().__init__(model, visualizer_class=AttentionVisualizer)
-    
+        self.model_config = model_config
+
     def _attention_hook(self, module, input, output) -> np.ndarray:
         """Hook function to extract attention weights."""
         x = input[0]
@@ -245,6 +250,10 @@ class AttentionAnalyzer(BaseAnalyzer):
                 hook.remove()
         
         return attention_maps
+
+    def get_activations(self, sequences: list[str], layer: str) -> np.ndarray:
+        raise NotImplementedError("Need to implement multi-sequence activation grabbing")
+        return self.get_attention_maps(sequences, layer)
         
     def diff_attention_from_reference(
         self,
@@ -273,7 +282,7 @@ class AttentionAnalyzer(BaseAnalyzer):
         sequence: str,
         layer_idx: int = 0,
         head_idx: int = 0,
-        k: int = 0
+        **kwargs
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Factorize attention patterns using SVD.
         
@@ -288,19 +297,61 @@ class AttentionAnalyzer(BaseAnalyzer):
         """
         # Calculate A = QKT
         A = self.get_attention_maps(sequence)[layer_idx][0, head_idx]
-        X = self.get_embeddings(sequence)
+        X = self.get_embeddings(sequence, flatten=False)
         
         # SVD(A) = USVT
         U, S, V = np.linalg.svd(A)
-        features_left_k = X.T @ U[k]
-        features_right_k = V.T @ S[k]
+        features_left = X.T @ U[:, 0]
+        features_right = X.T @ V[:, 0] 
         
-        # Project to PCA space
-        pca, _ = self.pca_embeddings(n_components=2)
-        features_left_pca = pca.transform(features_left_k)
-        features_right_pca = pca.transform(features_right_k)
+        return features_left, features_right
+
+    def project_attention_features(self, block_sequence, pca=None, sequences=None, config=None, **kwargs):
         
-        return features_left_pca, features_right_pca
+        if pca is None:
+            pca = self._get_embedding_pca(sequences, config)
+
+        V_pca = pca.components_
+
+        features_left, features_right = self.attention_factorization(block_sequence, **kwargs)
+
+        f0_proj_left = V_pca @ features_left
+        f0_proj_right = V_pca @ features_right
+
+        return f0_proj_left, f0_proj_right
+
+    def _get_embedding_pca(self, sequences, config):
+        embed_analyzer = EmbeddingAnalyzer(self.model, self.model_config)
+        pca, _, _ = embed_analyzer.compute_pca_embeddings(sequences, 'embed', config)
+        return pca
+
+    def plot_attention_features(self, sequences, block_sequences, config, **kwargs):
+        
+        pca = self._get_embedding_pca(sequences, config)
+        projections = {'left': [], 'right': []}
+        block_sequences = interp.trim_leading_duplicates(block_sequences)
+        for seq in block_sequences:
+            f0_proj_left, f0_proj_right = self.project_attention_features(seq, pca, **kwargs)
+            projections['left'].append(f0_proj_left)
+            projections['right'].append(f0_proj_right)
+
+        fig, axs = plt.subplots(ncols=2, figsize=(5, 3), sharex=True, sharey=True)
+        for ax, (singular_vector, values) in zip(axs, projections.items()):
+            tmp = pd.DataFrame(values, columns=[f'PC{i}' for i in range(1, config.n_components+1)])
+            tmp['seq'] = interp.trim_leading_duplicates(block_sequences)
+
+            # Melt the dataframe to get PCs on x-axis
+            tmp_melted = tmp.melt(id_vars=['seq'], var_name='PC', value_name='Projection')
+
+            sns.barplot(data=tmp_melted, x='PC', y='Projection', hue='seq', palette='magma', ax=ax, legend=singular_vector=='right')
+            ax.axhline(y=0, color='k')
+            ax.set(title=f'{singular_vector.capitalize()} features', xlabel='', ylabel='Projection Magnitude')
+
+        axs[1].legend(bbox_to_anchor=(1, 0), loc='lower left')
+        axs[1].set(ylim=(-2.0, 2.0))
+        fig.suptitle("Projection of Attention Feature Direction (f0)\ninto Embedding Layer PCA Space")
+
+        plt.tight_layout()
 
     def plot_attention(
         self,

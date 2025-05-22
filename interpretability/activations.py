@@ -27,21 +27,22 @@ class ActivationAnalyzer(BaseAnalyzer):
     def __init__(
         self,
         model: torch.nn.Module,
-        config: Any,
+        model_config: Any,
         layers: Optional[list[str]] = None
     ):
         """Initialize the activation analyzer.
 
         Args:
             model: The transformer model to analyze
-            config: Model configuration object
+            model_config: Model configuration object
             layers: Optional list of layers to analyze
         """
         super().__init__(model)
         self._hooks: list[torch.utils.hooks.RemovableHandle] = []
         self.model_component = 'Activation'  # Will be overridden by subclasses
-        self.layer_composition = self._get_layer_composition(config)
+        self.layer_composition = self._get_layer_composition(model_config)
         self.layers = layers or list(self.layer_composition.keys())
+        self.model_config = model_config
 
     def _get_layer_composition(self, config: Any) -> dict[str, int]:
         """Get the dimensions of each layer in the model component.
@@ -840,6 +841,6 @@ class EmbeddingAnalyzer(ActivationAnalyzer):
         captured_activations = {seq: {} for seq in input_seq}
         for seq in input_seq:
             embed = embed_sequence(self.model, seq, flatten=False)
-            captured_activations[seq]['embed'] = embed.squeeze(1)
+            captured_activations[seq]['embed'] = embed#.squeeze(1)
 
         return captured_activations

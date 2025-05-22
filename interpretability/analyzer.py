@@ -93,13 +93,145 @@ class BaseVisualizer:
         
         return ax
 
+    def plot_embedding_points(
+        self,
+        ax: plt.Axes,
+        embeddings: np.ndarray,
+        sequences: list[str],
+        config: DimensionalityReductionConfig,
+        counts: Optional[list[int]] = None,
+        color_map: Optional[dict[str, str]] = None,
+        marker_map: Optional[dict[str, str]] = None,
+        labels: Optional[list[str]] = None,
+        **kwargs
+    ) -> plt.Axes:
+        """Plot points in embedding space.
+        
+        Args:
+            ax: Axes to plot on
+            embeddings: Array of embeddings to plot
+            sequences: List of sequences corresponding to embeddings
+            config: Configuration for dimensionality reduction
+            counts: Optional list of counts for each sequence
+            color_map: Optional mapping from sequence to color
+            marker_map: Optional mapping from sequence to marker
+            labels: Optional list of labels for each point
+            **kwargs: Additional plotting arguments
+            
+        Returns:
+            Axes with plotted points
+        """
+        if counts is not None:
+            norm_counts = np.log1p(counts) / np.log1p(np.max(counts))
+            
+        for i, (seq, emb) in enumerate(zip(sequences, embeddings)):
+            # Determine color
+            if color_map is not None:
+                color = color_map[seq]
+            else:
+                color = 'red' if seq[config.token_pos] in ('R', 'r') else 'blue'
+                
+            # Determine marker
+            if marker_map is not None:
+                marker = marker_map[seq]
+            else:
+                marker = 'o' if seq[config.token_pos] in ('R', 'L') else 'x'
+                
+            # Determine size and alpha
+            if counts is not None:
+                alpha = norm_counts[i]
+                size = 10 * norm_counts[i]
+            else:
+                alpha = 1.0
+                size = 10
+                
+            # Plot point
+            ax.scatter(
+                emb[0],
+                emb[1],
+                color=color,
+                marker=marker,
+                alpha=alpha,
+                s=size,
+                label=labels[i] if labels is not None else None,
+                **kwargs
+            )
+            
+            # Add annotation for small datasets
+            if len(sequences) < 20:
+                ax.annotate(
+                    seq[config.token_pos],
+                    (emb[0], emb[1]),
+                    fontsize=12
+                )
+                
+        return ax
+
+    def transform_sequences_to_pca_space(
+        self,
+        sequences: list[str],
+        layer: str,
+        config: DimensionalityReductionConfig,
+        pca_model: Any,
+        seq_to_embedding: dict[str, np.ndarray]
+    ) -> np.ndarray:
+        """Transform sequences into an existing PCA space.
+        
+        Args:
+            sequences: List of sequences to transform
+            layer: Layer to get activations from
+            config: Configuration for dimensionality reduction
+            pca_model: Existing PCA model to use for transformation
+            seq_to_embedding: Mapping from sequences to their embeddings
+            
+        Returns:
+            Array of embeddings in the PCA space, preserving original sequence order
+        """
+        # Split sequences into existing and new
+        new_seqs = [seq for seq in sequences if seq not in seq_to_embedding]
+        
+        # Initialize result array
+        embeddings = np.zeros((len(sequences), config.n_components))  # Assuming 2D PCA space
+        
+        # Fill in existing sequences
+        for i, seq in enumerate(sequences):
+            if seq in seq_to_embedding:
+                embeddings[i] = seq_to_embedding[seq]
+        
+        # Transform new sequences if any
+        if new_seqs:
+            # Get activations for new sequences
+            new_acts = self.analyzer.get_layer_activations(new_seqs, layer)
+            
+            # Prepare data for transformation
+            if config.sequence_method == 'token':
+                X_new = np.array([
+                    act[config.token_pos] for act in new_acts.values()
+                ])
+            else:  # concat
+                X_new = np.concatenate([
+                    act.reshape(1, -1) for act in new_acts.values()
+                ], axis=0)
+                
+            # Transform using existing PCA model
+            new_embeddings = pca_model.transform(X_new)
+            
+            # Fill in new sequences
+            for i, seq in enumerate(sequences):
+                if seq in new_seqs:
+                    new_idx = new_seqs.index(seq)
+                    embeddings[i] = new_embeddings[new_idx]
+        
+        return embeddings
+
     def plot_pca_by_layer(
         self,
         sequences: list[str],
         config: DimensionalityReductionConfig,
         counts: Optional[list[int]] = None,
         layers: Optional[list[str]] = None,
-        variance_explained: bool = True
+        variance_explained: bool = True,
+        additional_points: Optional[list[tuple[list[str], dict]]] = None
     ) -> tuple[plt.Figure, tuple[np.ndarray, Optional[np.ndarray]]]:
         """Plot PCA visualization of activations by layer.
 
@@ -109,6 +241,9 @@ class BaseVisualizer:
             counts: Optional list of counts for each sequence
             layers: Layers to analyze. If None, uses all layers.
             variance_explained: Whether to plot variance explained
+            additional_points: Optional list of (sequences, plot_kwargs) tuples
+                for additional points to plot in the same embedding space.
+                Sequences can be either in the base set or new sequences.
 
         Returns:
             Figure and axes objects
@@ -136,45 +271,40 @@ class BaseVisualizer:
             axs1 = [axs1]
             axs2 = [axs2] if axs2 is not None else None
 
-        # Normalize counts if provided
-        if counts is not None:
-            norm_counts = np.log1p(counts) / np.log1p(np.max(counts))
-
         for j, (ax, layer) in enumerate(zip(axs1, layers)):
-            model, X_embedding = self.analyzer.prepare_pca_embeddings(
+            # Compute PCA embeddings
+            model, embeddings, seq_to_embedding = self.analyzer.compute_pca_embeddings(
                 sequences,
                 layer,
                 config
             )
-
-            if counts is not None:
-                for i, (seq, c) in enumerate(zip(sequences, norm_counts)):
-                    ax.scatter(
-                        X_embedding[i, 0],
-                        X_embedding[i, 1],
-                        color='red' if seq[config.token_pos] in ('R', 'r')
-                        else 'blue',
-                        marker='o' if seq[config.token_pos] in ('R', 'L')
-                        else 'x',
-                        alpha=c,
-                        s=10 * c
+            
+            # Plot base sequences
+            self.plot_embedding_points(
+                ax,
+                embeddings,
+                sequences,
+                config,
+                counts=counts
+            )
+            
+            # Plot additional points if provided
+            if additional_points is not None:
+                for add_seqs, plot_kwargs in additional_points:
+                    # Transform sequences to PCA space
+                    add_embeddings = self.transform_sequences_to_pca_space(
+                        add_seqs,
+                        layer,
+                        config,
+                        model,
+                        seq_to_embedding
                     )
-                    if len(sequences) < 20:
-                        ax.annotate(
-                            seq[config.token_pos],
-                            (X_embedding[i, 0], X_embedding[i, 1]),
-                            fontsize=12
-                        )
-            else:
-                for i, seq in enumerate(sequences):
+                    
+                    # Plot additional points
                     ax.scatter(
-                        X_embedding[i, 0],
-                        X_embedding[i, 1],
-                        color='red' if seq[config.token_pos] in ('R', 'r')
-                        else 'blue',
-                        marker='o' if seq[config.token_pos] in ('R', 'L')
-                        else 'x',
-                        s=10
+                        add_embeddings[:, 0],
+                        add_embeddings[:, 1],
+                        **plot_kwargs
                     )
 
             ax.set(
@@ -204,7 +334,6 @@ class BaseVisualizer:
             f'{config.sequence_method} method'
         )
         fig.suptitle(title, y=0.9)
-        # plt.subplots_adjust(top=0.98)
         sns.despine()
         plt.tight_layout()
         return fig, (axs1, axs2)
@@ -234,75 +363,31 @@ class BaseVisualizer:
         fake_counts = [10000]
         fake_counts.extend([1] * (len(sequences) - 1))
 
-        # Create base plot with all layers
-        fig, axs = self.plot_pca_by_layer(
-            sequences,
-            config,
-            counts=fake_counts,
-            layers=layers,
-            variance_explained=False
-        )
-
         # Get predicted tokens for block sequences
         predicted_token = predict_token(self.analyzer.model, block_sequences)
         palette = sns.color_palette('magma', n_colors=len(block_sequences))
 
-        # Add transition points to each layer's plot
-        for i, layer in enumerate(layers):
-            # Compute PCA for this layer using the base sequences
-            pca, _ = self.analyzer.prepare_pca_embeddings(
-                sequences,
-                layer,
-                config
-            )
+        # Create additional points configuration
+        additional_points = []
+        for i, (seq, t) in enumerate(zip(block_sequences, predicted_token)):
+            additional_points.append((
+                [seq],  # Single sequence
+                {
+                    'color': palette[i],  # Use 'color' instead of 'c'
+                    'label': f'{seq}->({t})',
+                    's': 30
+                }
+            ))
 
-            # Get transition activations for the block sequences
-            transition_acts = self.analyzer.get_layer_activations(
-                block_sequences,
-                layer
-            )
-            if self.analyzer.verbose:
-                print(f"Transition acts keys: {list(transition_acts.keys())}")
-
-            # Prepare transition embeddings
-            if config.sequence_method == 'token':
-                X = np.array([
-                    act[config.token_pos]
-                    for act in transition_acts.values()
-                ])
-            elif config.sequence_method == 'concat':
-                X = np.concatenate([
-                    act.reshape(1, -1)
-                    for act in transition_acts.values()
-                ], axis=0)
-
-            # Transform block sequences using the PCA from base sequences
-            transition_embeddings = pca.transform(X)
-
-            # Create mapping from sequence to its embedding
-            seq_to_embedding = {
-                seq: emb for seq, emb in zip(transition_acts.keys(), transition_embeddings)
-            }
-
-            # Plot transition points
-            for j, (seq, t) in enumerate(zip(block_sequences, predicted_token)):
-                embedding = seq_to_embedding[seq]
-                axs[0][i].scatter(
-                    embedding[0],
-                    embedding[1],
-                    color=palette[j],
-                    s=30,
-                    label=f'{seq}->({t})' if i == 0 else None
-                )
-
-        fig.legend(
-            bbox_to_anchor=(1.05, 0.1),
-            loc='lower left',
-            borderaxespad=0.,
-            fontsize=8,
-            frameon=False
+        # Create plot with base sequences and additional points
+        return self.plot_pca_by_layer(
+            sequences,
+            config,
+            counts=fake_counts,
+            layers=layers,
+            variance_explained=False,
+            additional_points=additional_points
         )
-        return fig, axs
 
 
 class BaseAnalyzer(ABC):
@@ -352,9 +437,9 @@ class BaseAnalyzer(ABC):
             ).unsqueeze(0)
         return input_tensor.to(self.model.device)
     
-    def get_embeddings(self, sequence: str) -> np.ndarray:
+    def get_embeddings(self, sequence: str, **kwargs) -> np.ndarray:
         """Get embeddings for a sequence."""
-        return embed_sequence(self.model, sequence)
+        return embed_sequence(self.model, sequence, **kwargs)
     
     def pca_embeddings(
         self,
@@ -423,21 +508,21 @@ class BaseAnalyzer(ABC):
         """
         pass
 
-    def prepare_pca_embeddings(
+    def compute_pca_embeddings(
         self,
         sequences: list[str],
         layer: str,
         config: DimensionalityReductionConfig
     ) -> tuple[Any, np.ndarray]:
-        """Prepare PCA embeddings for visualization.
+        """Compute PCA embeddings for a set of sequences.
         
         Args:
             sequences: List of sequences to analyze
             layer: Layer to analyze
-            config: Analysis configuration
+            config: Configuration for dimensionality reduction
             
         Returns:
-            Tuple of (model, embeddings)
+            Tuple of (pca model, embeddings array, sequence to embedding mapping)
         """
         # Get activations in the format specific to this analyzer
         activations = self.get_layer_activations(sequences, layer)
@@ -458,7 +543,12 @@ class BaseAnalyzer(ABC):
             model = PCA(n_components=config.n_components)
             X_embedding = model.fit_transform(X)
 
-        return model, X_embedding
+        # Create mapping from sequence to embedding
+        seq_to_embedding = {
+            seq: emb for seq, emb in zip(activations.keys(), X_embedding)
+        }
+
+        return model, X_embedding, seq_to_embedding
 
     def get_activation_by_position(
         self,
