@@ -104,8 +104,8 @@ class AttributionAnalyzer:
         """
         with torch.no_grad():
             base_logits, _ = self.model(input_tensor)
-            base_probs = F.softmax(base_logits[0, -1], dim=0)
             if as_prob:
+                base_probs = F.softmax(base_logits[0, -1], dim=0)
                 return base_probs[target_token_idx].item()
             return base_logits[0, -1, target_token_idx].item()
 
@@ -136,14 +136,33 @@ class AttributionAnalyzer:
     def _get_layers(self) -> dict[str, torch.nn.Module]:
         """Get default layer configuration for attribution.
         
+        This method sets up hooks to capture activations and gradients at key points
+        in the transformer's computation flow:
+        
+        - token_embedding: Raw token embeddings before position encoding
+        - position_embedding: Position encodings added to token embeddings
+        - layer0_attn_input: Input projection that creates Q,K,V vectors
+            Shape: [batch, seq_len, 3*n_embd] -> split into Q,K,V
+        - layer0_attn_output: Output projection after attention computation
+            Shape: [batch, seq_len, n_embd] -> projects back to embedding dim
+        - layer0_ln1: Layer normalization after attention block
+            Normalizes activations before MLP
+        - layer0_mlp_input: First linear projection in MLP
+            Shape: [batch, seq_len, n_embd] -> [batch, seq_len, 4*n_embd]
+        - layer0_mlp_output: Final linear projection in MLP
+            Shape: [batch, seq_len, 4*n_embd] -> [batch, seq_len, n_embd]
+            
         Returns:
             Dictionary mapping layer names to module instances
         """
         layers = {
             'token_embedding': 'transformer.wte',
             'position_embedding': 'transformer.wpe',
-            'layer0_attn': 'transformer.h.0.attn',
-            'layer0_mlp': 'transformer.h.0.mlp',
+            # 'layer0_attn_input': 'transformer.h.0.attn.c_attn',  # Input projection
+            # 'layer0_attn_output': 'transformer.h.0.attn.c_proj',  # Output projection
+            # 'layer0_ln1': 'transformer.h.0.ln_1',  # Layer norm after attention
+            # 'layer0_mlp_input': 'transformer.h.0.mlp.c_fc',  # Input projection
+            # 'layer0_mlp_output': 'transformer.h.0.mlp.c_proj',  # Output projection
         }
         return {
             name: self._get_module_by_path(path)
@@ -264,7 +283,7 @@ class AttributionAnalyzer:
     def _compute_layer_attribution(
         self,
         activation: torch.Tensor,
-        gradient: torch.Tensor
+        gradient: torch.Tensor,
     ) -> np.ndarray:
         """Compute attribution from activation and gradient tensors.
         
@@ -275,6 +294,7 @@ class AttributionAnalyzer:
         Returns:
             Attribution scores as numpy array
         """
+        # Use standard activation * gradient approach for all layers
         return (activation * gradient).sum(dim=-1).cpu().numpy().squeeze()
 
     def _process_layer_attributions(
@@ -297,6 +317,14 @@ class AttributionAnalyzer:
             if layer_activations[layer_name] and layer_gradients[layer_name]:
                 activation = layer_activations[layer_name][0]
                 gradient = layer_gradients[layer_name][0]
+                
+                # Debug prints for signs
+                act_sign = torch.sign(activation).float().mean().item()
+                grad_sign = torch.sign(gradient).float().mean().item()
+                # print(f"{layer_name}:")
+                # print(f"  Activation sign (mean): {act_sign:.3f}")
+                # print(f"  Gradient sign (mean): {grad_sign:.3f}")
+                
                 attributions[layer_name] = self._compute_layer_attribution(
                     activation,
                     gradient

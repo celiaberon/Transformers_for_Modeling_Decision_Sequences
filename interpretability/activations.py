@@ -84,18 +84,19 @@ class ActivationAnalyzer(BaseAnalyzer):
                             make_hook('input')
                         )
                     )
-                if 'gelu' in self.layers:
-                    self._hooks.append(
-                        block.mlp.gelu.register_forward_hook(
-                            make_hook('gelu')
-                        )
-                    )
-                if 'output' in self.layers:
-                    self._hooks.append(
-                        block.mlp.c_proj.register_forward_hook(
-                            make_hook('output')
-                        )
-                    )
+                # Remove hooks for gelu and output projection
+                # if 'gelu' in self.layers:
+                #     self._hooks.append(
+                #         block.mlp.gelu.register_forward_hook(
+                #             make_hook('gelu')
+                #         )
+                #     )
+                # if 'output' in self.layers:
+                #     self._hooks.append(
+                #         block.mlp.c_proj.register_forward_hook(
+                #             make_hook('output')
+                #         )
+                #     )
         if self.verbose:
             print(f"Registered {len(self._hooks)} hooks")
         return activations
@@ -144,10 +145,10 @@ class ActivationAnalyzer(BaseAnalyzer):
         sequences: list[str]
     ) -> dict[str, dict[str, np.ndarray]]:
         """Get activations for all layers for a list of sequences.
-        
+
         Args:
             sequences: List of sequences to analyze
-            
+
         Returns:
             Dictionary mapping sequences to dictionaries of layer activations.
             Structure: {seq: {layer: activation_array}}
@@ -157,7 +158,7 @@ class ActivationAnalyzer(BaseAnalyzer):
         
         # Capture activations using hooks
         raw_activations = self._setup_hooks()
-        
+
         # Store original training state
         was_training = self.model.training
 
@@ -179,7 +180,7 @@ class ActivationAnalyzer(BaseAnalyzer):
             for hook in self._hooks:
                 hook.remove()
                 i += 1
-                self._hooks.clear()
+            self._hooks.clear()
                 if self.verbose:
                     print(f"Cleaned up {i} hooks")
 

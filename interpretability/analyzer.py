@@ -93,6 +93,40 @@ class BaseVisualizer:
         
         return ax
 
+    def plot_multi_trial_token_probs(
+        self,
+        sequences: list[str],
+        max_sequences: int = 5,
+        **kwargs
+    ) -> None:
+        """Analyze attention patterns for multiple sequences.
+        
+        Args:
+            sequences: List of sequences to analyze
+            max_sequences: Maximum number of sequences to analyze
+            **kwargs: Additional arguments passed to plotting functions
+        """
+        sequences_to_analyze = sequences[:max_sequences]
+            
+        n_cols = len(sequences_to_analyze)
+        
+        # Create figure with minimal margins
+        fig, axs = plt.subplots(ncols=n_cols, figsize=(3*n_cols, 0.5))        
+            
+        for ax, seq in zip(axs, sequences_to_analyze):
+            # Use analyzer's methods to get probabilities and next token
+            probs = self.analyzer.predict_next_token_probs(seq)
+            next_token = self.analyzer.predict_next_token(seq, probs)
+            
+            # Plot probabilities using the base method
+            self.plot_token_probs(probs, ax=ax)
+                
+            ax.set(title=f'{seq} → ({next_token})')
+
+        plt.tight_layout(rect=[0, 0, 1, 0.98])
+        return fig
+
+
     def plot_embedding_points(
         self,
         ax: plt.Axes,
@@ -417,25 +451,59 @@ class BaseAnalyzer(ABC):
         self.n_heads = model.config.n_head
         self.n_embd = model.config.n_embd
         self.visualizer = visualizer_class(self)
-    
-    def tokenize(self, sequences):
-        if isinstance(sequences, str):
-            return torch.tensor([self.stoi[char] for char in sequences])
-        else:
-            return torch.tensor([[self.stoi[char] for char in sequence]
-                                for sequence in sequences])
         
-    def _prepare_input(self, sequence: str) -> torch.Tensor:
-        """Convert input sequence to tensor format."""
-        token_ids = self.tokenize(sequence)
-        if isinstance(token_ids, torch.Tensor):
-            input_tensor = token_ids.clone().detach().unsqueeze(0)
-        else:
-            input_tensor = torch.tensor(
-                token_ids,
-                dtype=torch.long
-            ).unsqueeze(0)
-        return input_tensor.to(self.model.device)
+    def tokenize(
+        self,
+        sequences: str | list[str],
+        batch: bool = False
+    ) -> torch.Tensor:
+        """Convert sequences to token IDs.
+        
+        Args:
+            sequences: Single sequence or list of sequences to tokenize
+            batch: If True, always return a batch tensor even for single sequence
+            
+        Returns:
+            Tensor of token IDs, shape (batch_size, seq_len) if batch=True or
+            multiple sequences, otherwise (seq_len,)
+        """
+        # Convert single sequence to list for consistent processing
+        if isinstance(sequences, str):
+            sequences = [sequences]
+
+        # Tokenize all sequences
+        token_ids = [
+            [self.stoi[char] for char in sequence]
+            for sequence in sequences
+        ]
+
+        # Convert to tensor
+        tensor = torch.tensor(token_ids)
+        
+        # Remove batch dimension if single sequence and batch=False
+        if len(sequences) == 1 and not batch:
+            tensor = tensor.squeeze(0)
+            
+        return tensor
+        
+    def _prepare_input(
+        self,
+        sequences: str | list[str],
+        batch: bool = False
+    ) -> torch.Tensor:
+        """Prepare input sequences for model forward pass.
+        
+        Args:
+            sequences: Single sequence or list of sequences to prepare
+            batch: If True, always return a batch tensor even for single sequence
+            
+        Returns:
+            Tensor ready for model input, shape (batch_size, seq_len)
+        """
+        # Get token IDs
+        token_ids = self.tokenize(sequences, batch=batch)
+        # Ensure tensor is on correct device
+        return token_ids.to(self.model.device)
     
     def get_embeddings(self, sequence: str, **kwargs) -> np.ndarray:
         """Get embeddings for a sequence."""
@@ -454,18 +522,24 @@ class BaseAnalyzer(ABC):
             **kwargs
         )
     
-    def predict_next_token(self, sequence: str) -> np.ndarray:
-        """Get model prediction for the next token."""
-        input_ids = self._prepare_input(sequence)
+    def predict_next_token_probs(self, sequence: str) -> np.ndarray:
+        """Get model probabilities for the next token."""
+        input_ids = self._prepare_input(sequence, batch=True)
         with torch.no_grad():
             logits, _ = self.model(input_ids)
         next_token_logits = logits[:, -1, :]
         probs = F.softmax(next_token_logits, dim=-1)
         return probs.detach().cpu().numpy()[0]
     
+    def predict_next_token(self, sequence: str, probs=None) -> str:
+        """Get model prediction for the next token."""
+        if probs is None:
+            probs = self.predict_next_token_probs(sequence)
+        return self.vocab[np.argmax(probs)]
+    
     def get_token_probs(self, sequence: str) -> Dict[str, float]:
         """Get probability distribution over next tokens."""
-        probs = self.predict_next_token(sequence)
+        probs = self.predict_next_token_probs(sequence)
         return dict(zip(self.vocab, probs))
 
     def count_tokens(self, seqs: list[str]) -> pd.DataFrame:

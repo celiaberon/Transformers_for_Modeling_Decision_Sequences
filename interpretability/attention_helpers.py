@@ -222,7 +222,7 @@ class AttentionAnalyzer(BaseAnalyzer):
     
     def get_attention_maps(self, sequence: str) -> List[np.ndarray]:
         """Get attention weights for each layer and head."""
-        input_ids = self._prepare_input(sequence)
+        input_ids = self._prepare_input(sequence, batch=True)
         
         B, T = input_ids.size()
         assert T <= self.model.config.block_size, (
@@ -374,9 +374,9 @@ class AttentionAnalyzer(BaseAnalyzer):
         """
         
         attention_maps = self.get_attention_maps(sequence)
-        probs = self.predict_next_token(sequence)
+        probs = self.predict_next_token_probs(sequence)
         
-        next_token = self.vocab[np.argmax(probs)]
+        next_token = self.predict_next_token(sequence, probs)
 
         if as_diff:
             attention_maps = self.diff_attention_from_reference(
@@ -394,7 +394,7 @@ class AttentionAnalyzer(BaseAnalyzer):
         )
         return next_token, probs, fig
 
-    def analyze_multiple_sequences(
+    def plot_attention_multiple_sequences(
         self,
         sequences: List[str],
         max_sequences: int = 5,
@@ -440,7 +440,7 @@ class AttentionAnalyzer(BaseAnalyzer):
                 hspace=0.0
             )
             
-            margin_factor = 0.05 * len(sequences_to_analyze)
+            margin_factor = np.clip(0.05 * len(sequences_to_analyze), 0.0, 0.45)
             for i, (subfig, seq) in enumerate(
                 zip(subfigs, sequences_to_analyze)
             ):
