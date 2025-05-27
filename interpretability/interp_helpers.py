@@ -23,8 +23,11 @@ itos = {i: ch for i, ch in enumerate(vocab)}
 
 
 def tokenize(sequences):
-    return torch.tensor([[stoi[char] for char in sequence]
-                         for sequence in sequences])
+    if isinstance(sequences, str):
+        return torch.tensor([stoi[char] for char in sequences])
+    else:
+        return torch.tensor([[stoi[char] for char in sequence]
+                             for sequence in sequences])
 
 
 def get_common_sequences(T, run=None, events=None, min_count=50, k=10):
@@ -56,10 +59,21 @@ def get_block_transition_sequences(events, T, trial_range=(-3, 9), high_port=1):
     return sequences
 
 
+def trim_leading_duplicates(seq_list):
+    if not seq_list:
+        return []
+    first = seq_list[0]
+    # Find the index where the first non-duplicate occurs
+    i = 1
+    while i < len(seq_list) and seq_list[i] == first:
+        i += 1
+    return [first] + seq_list[i:]
+
+
 def predict_token(model, sequences):
     tokenized_sequences = tokenize(sequences)
     logits, _ = model(tokenized_sequences)
-    probs = F.softmax(logits[:, -1, :], dim=1)
+    probs = F.softmax(logits[:, -1, :], dim=-1)
     max_probs, predicted_token = probs.max(dim=1)
     predicted_token = [itos[t] for t in predicted_token.detach().cpu().numpy()]
     return predicted_token
@@ -515,7 +529,7 @@ def calculate_embedding_distances(all_embeddings, checkpoint_numbers, model_labe
 def plot_attribution_all_targets(attribution_func, model, sequences, vocab, stoi, ncols=1, **kwargs):
 
     for sequence in sequences:
-        fig, axs = plt.subplots(ncols=ncols, nrows=4, figsize=(4*ncols, 2.), layout='constrained', sharex=True)
+        fig, axs = plt.subplots(ncols=ncols, nrows=4, figsize=(3*ncols, 1.5), layout='constrained', sharex=True)
         if ncols == 1:
             axs = [np.array(ax) for ax in axs]
         for t, ax in zip(vocab, axs):
@@ -530,15 +544,15 @@ def plot_attribution_all_targets(attribution_func, model, sequences, vocab, stoi
                 hm = sns.heatmap(data, ax=ax_, vmin=-1, vmax=1, cmap="RdBu", annot=False, cbar=False)
 
                 for i, char in enumerate(sequence):
-                    ax_.text(i + 0.5, 0.5, char, 
-                            horizontalalignment='center',
-                            verticalalignment='center',
+                    ax_.text(i + 0.5, 0.5, char,
+                            ha='center',
+                            va='center',
                             fontsize=10,
                             fontweight='bold',
                             color='k')
 
                 ax_.yaxis.tick_right()
-                ax_.set_yticks(ax_.get_yticks(), labels=[t], rotation=0)
+                ax_.set_yticks([0.5], labels=[t], rotation=0)
                 if t == vocab[0]:
                     ax_.set_title(attribution_type)
             fig.suptitle(f"Attribution for sequence: {sequence}", y=1.1)
