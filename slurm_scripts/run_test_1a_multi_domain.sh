@@ -27,6 +27,7 @@ CONTEXT_LENGTH=${6:-12}
 EMBD_DIM=${7:-64}
 BATCH_SIZE=${8:-256}
 DOMAIN_CONFIG=${9:-"domains.ini"}
+DOMAIN_ID=${10:-"B"}  # unused for multi-domain
 
 # Export run number
 export RUN_NUMBER

@@ -653,7 +653,7 @@ def main():
                 # Extract loss values for logging
                 val_loss_choice = val_loss.get('choice_loss').item() if isinstance(val_loss, dict) else None
                 val_loss_reward = val_loss.get('reward_loss').item() if isinstance(val_loss, dict) else None
-                val_loss = val_loss.get('full_loss').item() if isinstance(val_loss, dict) else val_loss.item()
+                val_loss = val_loss.get('full_loss').item() if isinstance(val_loss, dict) else val_loss
                 # wandb.log({
                 #     "step": step,
                 #     "loss": loss_accum.item(),
@@ -665,7 +665,8 @@ def main():
                 #     "step_time_ms": dt,
                 #     "tokens_per_sec": tokens_per_sec,
                 # })
-                
+                print(val_loss)
+                val_loss_value = val_loss.get('full_loss').item() if isinstance(val_loss, dict) else val_loss
                 # Periodic detailed logging
                 if step % (args.eval_interval*10) == 0:
                     logger.info(f"step {step} | loss: {loss_accum.item():.4f} | val_loss: {val_loss_value:.4f} | "
@@ -679,7 +680,6 @@ def main():
             logger.info(f"Checkpoint at step {step} (dataloader pos: {train_loader.current_position})")
             
             # Check if validation loss improved
-            val_loss_value = val_loss.get('full_loss').item() if isinstance(val_loss, dict) else val_loss.item()
             if loss_improved:= (val_loss_value < best_val_loss):
                 best_val_loss = val_loss_value
                 

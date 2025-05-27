@@ -8,7 +8,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --time=01:00:00  
 #SBATCH --mem=150GB
-#SBATCH --partition=kempner
+#SBATCH --partition=kempner_requeue
 
 # Source common functions
 source "./slurm_scripts/common_functions.sh"
