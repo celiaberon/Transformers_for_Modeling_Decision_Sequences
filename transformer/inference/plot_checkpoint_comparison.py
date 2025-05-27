@@ -9,15 +9,17 @@ import seaborn as sns
 sys.path.append(os.path.abspath(os.path.join(__file__, '../../../')))
 
 import utils.file_management as fm
-
+from evaluation.evaluate_transformer_guess import compute_confusion_matrix
 from evaluation.graph_helper import calc_bpos_behavior
-from utils.checkpoint_processing import (add_checkpoint_colorbar, generate_checkpoint_colormap,
+from utils.checkpoint_processing import (add_checkpoint_colorbar,
+                                         generate_checkpoint_colormap,
                                          get_checkpoint_files)
 from utils.parse_data import (align_predictions_with_gt, get_data_filenames,
                               parse_simulated_data)
 
 sys.path.append(os.path.abspath(os.path.join(__file__, '../../../../behavior-helpers/')))
 from bh.visualization import plot_trials as pts
+from inference.plot_confusion_matrix import plot_confusion_matrix_with_bars
 
 
 def main(run=None, suffix: str = 'v'):
@@ -61,6 +63,8 @@ def main(run=None, suffix: str = 'v'):
                       for label, color in cmap['colors'].items()}
     cmap['colors']['ground truth'] = 'k'
 
+    confusion_matrices = []
+    checkpoint_models = []
     for pred_file, indices_file in zip(checkpoint_files, indices_files):
 
         # Extract checkpoint numbers
@@ -88,7 +92,10 @@ def main(run=None, suffix: str = 'v'):
         pred_policies = pts.calc_conditional_probs(events, add_grps='domain', htrials=2, sortby='pevent', pred_col='pred_switch')
         pred_policies['model'] = label
         gt_policies = pd.concat([gt_policies, pred_policies])
-        # cmap[label] = color
+
+        _, conf_matrix, confusion_labels = compute_confusion_matrix(events)
+        confusion_matrices.append(conf_matrix)
+        checkpoint_models.append(label)
 
     # Ground truth data -- mimic as a checkpoint
     for ax_, (domain, bpos_domain) in zip(axes.T, bpos_.groupby('domain')):
@@ -114,6 +121,14 @@ def main(run=None, suffix: str = 'v'):
     fig.savefig(fig_path, bbox_inches='tight')
     print(f'Saved checkpoint comparison plot to {fig_path}')
 
+    fig, axes = plot_confusion_matrix_with_bars(
+        confusion_matrices,
+        labels=confusion_labels,
+        model_names=checkpoint_models,
+        normalize=True,
+        title="Checkpoints"
+    )
+    plt.show()
 
 if __name__ == "__main__":
     import argparse

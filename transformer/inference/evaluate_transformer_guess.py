@@ -34,15 +34,10 @@ def print_accuracy(aligned_data):
     logger.raw(f"{' ':>15}Reward Accuracy (Upper/Lower same): {reward_accuracy:.2%}")
 
 
-def plot_confusion_matrix(aligned_data, run, model_name, domain=''):
-
+def compute_confusion_matrix(aligned_data):
     ground_truth_tokens = list(aligned_data['k0'].values)
     prediction_tokens = list(aligned_data['pred_k0'].values)
     confusion = Counter((gt, pred) for gt, pred in zip(ground_truth_tokens, prediction_tokens))
-    logger.raw("\nConfusion Matrix:")
-    logger.raw("Ground Truth -> Prediction: Count")
-    for (gt_char, pred_char), count in sorted(confusion.items(), key=lambda x: x[1], reverse=True):
-        logger.raw(f"{gt_char} -> {pred_char}: {count}")
 
     labels = sorted(set(ground_truth_tokens + prediction_tokens))
     label_map = {label: i for i, label in enumerate(labels)}
@@ -53,6 +48,17 @@ def plot_confusion_matrix(aligned_data, run, model_name, domain=''):
     for (gt_char, pred_char), count in confusion.items():
         i, j = label_map[gt_char], label_map[pred_char]
         conf_matrix[i, j] = count
+    return confusion, conf_matrix, labels
+
+
+def plot_confusion_matrix(aligned_data, run, model_name, domain=''):
+
+    confusion, conf_matrix, labels = compute_confusion_matrix(aligned_data)
+    logger.raw("\nConfusion Matrix:")
+    logger.raw("Ground Truth -> Prediction: Count")
+    for (gt_char, pred_char), count in sorted(confusion.items(), key=lambda x: x[1], reverse=True):
+        logger.raw(f"{gt_char} -> {pred_char}: {count}")
+
     fig, ax = plt.subplots(figsize=(8, 6))
     sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues",
                 xticklabels=labels, yticklabels=labels, ax=ax)
