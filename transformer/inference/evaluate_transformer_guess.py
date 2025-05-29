@@ -34,20 +34,26 @@ def print_accuracy(aligned_data):
     logger.raw(f"{' ':>15}Reward Accuracy (Upper/Lower same): {reward_accuracy:.2%}")
 
 
-def compute_confusion_matrix(aligned_data):
+def compute_confusion_matrix(aligned_data, normalize=None):
+    aligned_data = aligned_data.copy().dropna(subset=['k0', 'pred_k0'])
     ground_truth_tokens = list(aligned_data['k0'].values)
     prediction_tokens = list(aligned_data['pred_k0'].values)
     confusion = Counter((gt, pred) for gt, pred in zip(ground_truth_tokens, prediction_tokens))
-
     labels = sorted(set(ground_truth_tokens + prediction_tokens))
     label_map = {label: i for i, label in enumerate(labels)}
-    # Initialize the confusion matrix array
-    conf_matrix = np.zeros((len(labels), len(labels)), dtype=int)
 
-    # Populate the confusion matrix array
+    conf_matrix = np.zeros((len(labels), len(labels)), dtype=int)
     for (gt_char, pred_char), count in confusion.items():
         i, j = label_map[gt_char], label_map[pred_char]
         conf_matrix[i, j] = count
+
+    if normalize == 'all':
+        conf_matrix = conf_matrix.astype('float') / conf_matrix.sum()
+    elif normalize == 'row':
+        conf_matrix = conf_matrix.astype('float') / conf_matrix.sum(axis=1)[:, np.newaxis]
+    elif normalize == 'col':
+        conf_matrix = conf_matrix.astype('float') / conf_matrix.sum(axis=0)[np.newaxis, :]
+
     return confusion, conf_matrix, labels
 
 
