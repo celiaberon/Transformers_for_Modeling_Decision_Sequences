@@ -14,6 +14,7 @@ from feature_attribution import AttributionAnalyzer
 
 import utils.file_management as fm
 from interpretability.activations import EmbeddingAnalyzer, MLPAnalyzer
+from attention_helpers import AttentionAnalyzer
 from interpretability.analyzer import DimensionalityReductionConfig
 from utils.parse_data import load_trained_model
 
@@ -61,6 +62,8 @@ def main(run: int | None = None, model_name: str | None = None):
     logger.info(f"Vocabulary size: {config.vocab_size}")
     logger.info(f"Block size (context length): {config.block_size}")
 
+    _ = interp.analyze_embedding_evolution(run, save_results=True)
+
     T = model_info['dataloader']['Sequence length (T)']
 
     num_sequences = 300
@@ -80,6 +83,7 @@ def main(run: int | None = None, model_name: str | None = None):
     attribution_analyzer = AttributionAnalyzer(model, method='inputs')
     embedding_analyzer = EmbeddingAnalyzer(model, config)
     mlp_analyzer = MLPAnalyzer(model, config)
+    attention_analyzer = AttentionAnalyzer(model, config)
     activations = mlp_analyzer.get_activations(sequences)
     for method in ['raw', 'choicediff', 'rewarddiff', 'choicepchange', 'rewardpchange']:
         _, fig = mlp_analyzer.analyze_layer_specialization(activations, token_pos=-1, method=method)
@@ -134,6 +138,8 @@ def main(run: int | None = None, model_name: str | None = None):
         fig_path = fm.get_experiment_file(f'embed_pca_concat.png', run, subdir=f'interp/bt_{i}')
         fig.savefig(fig_path, bbox_inches='tight')
         plt.close()
+        
+        # Trim leading duplicates for attribution and attention analysis
         seq_ = interp.trim_leading_duplicates(seq)
         fig, axs = attribution_analyzer.plot_attribution_contiguous_sequences(seq_, method='embedding_erasure', as_prob=True)
         fig_path = fm.get_experiment_file(f'embedding_erasure.png', run, subdir=f'interp/bt_{i}')
@@ -148,6 +154,30 @@ def main(run: int | None = None, model_name: str | None = None):
         fig_path = fm.get_experiment_file(f'lime.png', run, subdir=f'interp/bt_{i}')
         fig.savefig(fig_path, bbox_inches='tight')
         plt.close()
+
+        fig = attention_analyzer.plot_attention_multiple_sequences(seq_, max_sequences=10)
+        fig_path = fm.get_experiment_file(f'attention_raw.png', run, subdir=f'interp/bt_{i}')
+        fig.savefig(fig_path, bbox_inches='tight')
+        plt.close()
+        fig = attention_analyzer.plot_attention_multiple_sequences(
+            seq_[1:],
+            max_sequences=10,
+            as_diff=True,
+            ref_seq=seq_[0])
+        fig_path = fm.get_experiment_file(f'attention_diff.png', run, subdir=f'interp/bt_{i}')
+        fig.savefig(fig_path, bbox_inches='tight')
+        plt.close()
+
+        dr_config = DimensionalityReductionConfig(
+            token_pos=-1,
+            sequence_method='token',
+            n_components=2
+        )
+        fig = attention_analyzer.plot_attention_features(sequences, seq, dr_config)
+        fig_path = fm.get_experiment_file(f'qk_features.png', run, subdir=f'interp/bt_{i}')
+        fig.savefig(fig_path, bbox_inches='tight')
+        plt.close()
+
     events, sequences, counts = interp.get_common_sequences(T, events=events, k=1000)
     mlp_activations = mlp_analyzer.get_activations(sequences)
     mlp_last_pos_by_layer = mlp_analyzer.get_activation_by_position(mlp_activations, token_pos=-1)

@@ -76,6 +76,7 @@ class AttributionAnalyzer:
         Returns:
             Tensor of shape [1, seq_len] containing token indices
         """
+        device = next(self.model.parameters()).device
         token_ids = tokenize(sequence)
         if isinstance(token_ids, torch.Tensor):
             input_tensor = token_ids.clone().detach().unsqueeze(0)
@@ -84,7 +85,7 @@ class AttributionAnalyzer:
                 token_ids,
                 dtype=torch.long
             ).unsqueeze(0)
-        return input_tensor.to(self.model.device)
+        return input_tensor.to(device)
 
     def _get_score(
         self,
@@ -362,7 +363,8 @@ class AttributionAnalyzer:
         Returns:
             Array of attribution scores for each position
         """
-        input_tensor = self._prepare_input(sequence)
+        device = next(self.model.parameters()).device
+        input_tensor = self._prepare_input(sequence).to(device)
         base_score = self._get_score(input_tensor, target_token_idx, as_prob)
         attributions = []
 
