@@ -477,7 +477,7 @@ def plot_embedding_evolution(projected_embeddings, model_labels,
     sns.despine()
     
     if save_results:
-        out_path = fm.get_experiment_file(f'token_embedding_evolution.png', run, subdir='predictions')
+        out_path = fm.get_experiment_file(f'token_embedding_evolution.png', run, subdir='interp')
         plt.savefig(out_path, bbox_inches='tight', dpi=300)
 
 
