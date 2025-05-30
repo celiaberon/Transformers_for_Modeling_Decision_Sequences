@@ -155,7 +155,7 @@ def embed_sequence(model, sequence, flatten=True):
     return combined_embeddings.detach().cpu().numpy()
 
 
-def token_embedding_similarity(model, vocab_mappings, ax=None):
+def token_embedding_similarity(model, vocab_mappings, fig=None,ax=None):
     """
     Analyze the token embeddings from the input embedding layer
     (model.transformer.wte). Weights are equivalent to embeddings.
@@ -179,7 +179,7 @@ def token_embedding_similarity(model, vocab_mappings, ax=None):
 
     # Compute cosine similarity between token embeddings
     similarity_matrix = cosine_similarity(token_embeddings)
-    ax = plot_similarity(similarity_matrix, vocab_mappings.keys(), ax=ax, annot=True)
+    fig, ax = plot_similarity(similarity_matrix, vocab_mappings.keys(), fig=fig, ax=ax, annot=True)
 
     return token_embeddings, similarity_matrix
 
@@ -219,7 +219,7 @@ def sequence_embedding_similarity(model, sequences, stoi):
     return sequence_embeddings, similarity_matrix
 
 
-def plot_similarity(similarity_matrix, sequences, ax=None, annot=False):
+def plot_similarity(similarity_matrix, sequences, fig=None, ax=None, annot=False):
     """
     Plot the similarity matrix (e.g. token embedding similarity or sequence embedding similarity).
     """
@@ -239,7 +239,7 @@ def plot_similarity(similarity_matrix, sequences, ax=None, annot=False):
         ax=ax
     )
     ax.set(title='Token Embedding Similarity')
-    return ax
+    return fig, ax
 
 
 def pca_embeddings(model, n_components=2, token_mapping=None):
@@ -296,7 +296,7 @@ def pca_embeddings(model, n_components=2, token_mapping=None):
     axs[-2].set(xlabel='PC', xticks=range(1, n_components + 1),
                 ylabel='Explained Variance Ratio', ylim=(0, 1.05) )
 
-    embeddings, _ = token_embedding_similarity(model, token_mapping, ax=axs[-1])
+    embeddings, _ = token_embedding_similarity(model, token_mapping, fig=fig, ax=axs[-1])
 
     sns.despine()
 
@@ -367,7 +367,7 @@ def cluster_sequences_hierarchical(similarity_matrix, sequences, replot=True,
     if replot:
         fig, ax = plt.subplots(figsize=(0.18 * len(sequences), 0.18 * len(sequences)),
                                layout='constrained')
-        ax = plot_similarity(ordered_sim_matrix, ordered_sequences, ax=ax)
+        fig, ax = plot_similarity(ordered_sim_matrix, ordered_sequences, fig=fig, ax=ax)
         ax.set(title='Similarity Matrix (Ordered by Hierarchical Clustering)')
 
     return ordered_sequences, ordered_sim_matrix, Z_ordered

@@ -33,6 +33,10 @@ sns.set_theme(
 
 logger = None
 
+vocab = ['R', 'r', 'L', 'l']
+stoi = {ch: i for i, ch in enumerate(vocab)}
+itos = {i: ch for i, ch in enumerate(vocab)}
+
 def initialize_logger(run):
     """Initialize logger"""
     global logger
@@ -68,6 +72,66 @@ def main(run: int | None = None, model_name: str | None = None):
 
     num_sequences = 300
     events, sequences, counts = interp.get_common_sequences(T, run=run, k=num_sequences)
+
+    sample_sequences = np.random.choice(sequences, size=20)
+    embeddings, similarities = interp.sequence_embedding_similarity(model, sample_sequences, stoi)
+
+    ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(similarities, sample_sequences, replot=False)
+    fig, ax = interp.plot_similarity(ordered_sim_matrix, ordered_sequences)
+    ax.set(title=f'run {run}')
+    fig_path = fm.get_experiment_file(f'sample_sequence_similarity.png', run, subdir='interp')
+    fig.savefig(fig_path, bbox_inches='tight')
+    plt.close()
+
+    selected_sequences, uncertainty = interp.get_uncertain_sequences(sequences, model, feature='choice', is_uncertain=True, threshold=0)
+
+    fig, ax = plt.subplots(figsize=(3, 2))
+    ax.plot(uncertainty)
+    ax.set(title='Uncertainty of Choice', xlabel='Sequence', ylabel='Uncertainty')
+    sns.despine()
+    fig_path = fm.get_experiment_file(f'uncertainty_choice.png', run, subdir='interp')
+    fig.savefig(fig_path, bbox_inches='tight')
+    plt.close()
+
+    high_uncertainty_sequences, high_uncertainty = interp.get_uncertain_sequences(sequences, model, feature='choice', is_uncertain=True, threshold=0.7)
+    low_uncertainty_sequences, low_uncertainty = interp.get_uncertain_sequences(sequences, model, feature='choice', is_uncertain=False, threshold=0.7)
+    
+    fig, axs = plt.subplots(ncols=2, figsize=(7, 3.5), layout='constrained')
+
+    _, similarities = interp.sequence_embedding_similarity(model, high_uncertainty_sequences[:20], stoi)
+    ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(similarities, high_uncertainty_sequences[:20], replot=False)
+    fig, axs[0] = interp.plot_similarity(ordered_sim_matrix, ordered_sequences, fig=fig, ax=axs[0])
+    axs[0].set(title='High Uncertainty Sequences')
+
+    _, similarities = interp.sequence_embedding_similarity(model, low_uncertainty_sequences[:20], stoi)
+    ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(similarities, low_uncertainty_sequences[:20], replot=False)
+    fig, axs[1] = interp.plot_similarity(ordered_sim_matrix, ordered_sequences, fig=fig, ax=axs[1])
+    axs[1].set(title='Low Uncertainty Sequences')
+    fig.suptitle('Choice Uncertainty')
+    fig_path = fm.get_experiment_file(f'similarity_uncertainty_choice.png', run, subdir='interp')
+    fig.savefig(fig_path, bbox_inches='tight')
+    plt.close()
+
+    high_overall_uncertainty_sequences, high_overall_uncertainty = interp.get_uncertain_sequences(sequences, model, is_uncertain=True, threshold=0.5)
+
+    low_overall_uncertainty_sequences, low_overall_uncertainty = interp.get_uncertain_sequences(sequences, model, is_uncertain=False, threshold=0.7)
+
+    fig, axs = plt.subplots(ncols=2, figsize=(7, 3.5), layout='constrained')
+
+    _, similarities = interp.sequence_embedding_similarity(model, high_overall_uncertainty_sequences[:20], stoi)
+    ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(similarities, high_overall_uncertainty_sequences[:20], replot=False)
+    fig, axs[0] = interp.plot_similarity(ordered_sim_matrix, ordered_sequences, fig=fig, ax=axs[0])
+    axs[0].set(title='High Uncertainty Sequences')
+
+    _, similarities = interp.sequence_embedding_similarity(model, low_overall_uncertainty_sequences[:20], stoi)
+    ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(similarities, low_overall_uncertainty_sequences[:20], replot=False)
+    fig, axs[1] = interp.plot_similarity(ordered_sim_matrix, ordered_sequences, fig=fig, ax=axs[1])
+    axs[1].set(title='Low Uncertainty Sequences')
+    fig.suptitle('Overall Uncertainty (including reward)')
+    fig_path = fm.get_experiment_file(f'similarity_uncertainty_overall.png', run, subdir='interp')
+    fig.savefig(fig_path, bbox_inches='tight')
+    plt.close()
+
 
     block_sequences = interp.get_block_transition_sequences(events, T, high_port=1)
     block_sequences = [list(b.values) for b in block_sequences]
