@@ -352,6 +352,7 @@ class AttentionAnalyzer(BaseAnalyzer):
         fig.suptitle("Projection of Attention Feature Direction (f0)\ninto Embedding Layer PCA Space")
 
         plt.tight_layout()
+        return fig
 
     def plot_attention(
         self,

@@ -126,7 +126,6 @@ class BaseVisualizer:
         plt.tight_layout(rect=[0, 0, 1, 0.98])
         return fig
 
-
     def plot_embedding_points(
         self,
         ax: plt.Axes,
@@ -322,7 +321,6 @@ class BaseVisualizer:
                 counts=counts
             )
             
-            # Plot additional points if provided
             if additional_points is not None:
                 for add_seqs, plot_kwargs in additional_points:
                     # Transform sequences to PCA space
@@ -333,11 +331,11 @@ class BaseVisualizer:
                         model,
                         seq_to_embedding
                     )
-                    
-                    # Plot additional points
+
                     ax.scatter(
                         add_embeddings[:, 0],
                         add_embeddings[:, 1],
+                        label=plot_kwargs.pop('label', None),
                         **plot_kwargs
                     )
 
@@ -369,6 +367,14 @@ class BaseVisualizer:
         )
         fig.suptitle(title, y=0.9)
         sns.despine()
+
+        fig.legend(
+            bbox_to_anchor=(1.05, 0.1),
+            loc='lower left',
+            borderaxespad=0.,
+            fontsize=8,
+            frameon=False
+        )
         plt.tight_layout()
         return fig, (axs1, axs2)
 
@@ -408,7 +414,7 @@ class BaseVisualizer:
                 [seq],  # Single sequence
                 {
                     'color': palette[i],  # Use 'color' instead of 'c'
-                    'label': f'{seq}->({t})',
+                    'label': f'{seq} → ({t})',
                     's': 30
                 }
             ))

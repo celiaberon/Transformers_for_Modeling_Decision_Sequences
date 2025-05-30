@@ -123,15 +123,33 @@ def main(run: int | None = None):
     fig, axs = plt.subplots(ncols=3,figsize=(8, 2.5), layout='constrained')
     for ax, layer in zip(axs, mlp_analyzer.layers):
 
-        # Calculate correlation between neurons (input layer)
+        # Calculate correlation between neurons
         neuron_corr = pd.DataFrame(last_pos_by_layer[layer]).T.corr()
-
         ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(neuron_corr.to_numpy(), np.arange(len(neuron_corr)), replot=False)
         plt.close()
         interp.plot_similarity(ordered_sim_matrix, ordered_sequences, ax=ax)
         ax.set_title(layer.capitalize())
 
     fig.suptitle("Within-Layer Neuron Correlations")
-
     fig_path = fm.get_experiment_file('mlp_interneuron_corr.png', run, subdir='interp')
+    fig.savefig(fig_path, bbox_inches='tight')
+
+    # Find maximal activations for each layer
+    max_activations = {}
+    fig, axes_dict = mlp_analyzer.visualizer.create_mlp_visualization()
+
+    for layer_name, axes in axes_dict.items():
+        max_activations[layer_name] = mlp_analyzer.find_maximal_activations(
+            last_pos_by_layer, layer_name, sequences)
+
+        for neuron_idx, ax in enumerate(axes):
+            ax, token_counts = mlp_analyzer.analyze_neuron_patterns(max_activations, layer_name, neuron_idx, ax=ax, cbar=neuron_idx == (len(axes)-1))
+            avg_sequence = mlp_analyzer.get_average_sequence(token_counts, single_threshold=0, joint_threshold=0)
+            avg_sequence_thresholded = mlp_analyzer.get_average_sequence(token_counts, single_threshold=0.6, joint_threshold=0.4)
+            ax.set(title=f"Neuron {neuron_idx+1}\n{avg_sequence}\n{avg_sequence_thresholded}", xticks=[])
+            ax.set_aspect(1)
+            if neuron_idx > 0:
+                ax.set(ylabel='', yticks=[])
+            ax.set(xlabel='')
+    fig_path = fm.get_experiment_file('mlp_max_activations.png', run, subdir='interp')
     fig.savefig(fig_path, bbox_inches='tight')
