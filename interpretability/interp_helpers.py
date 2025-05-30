@@ -526,7 +526,7 @@ def calculate_embedding_distances(all_embeddings, checkpoint_numbers, model_labe
     sns.despine()
 
     if save_results:
-        out_path = fm.get_experiment_file(f'token_embedding_distances.png', run, subdir='predictions')
+        out_path = fm.get_experiment_file(f'token_embedding_distances.png', run, subdir='interp')
         plt.savefig(out_path, bbox_inches='tight', dpi=300)
 
 
