@@ -292,23 +292,21 @@ class ActivationAnalyzer(BaseAnalyzer):
         self,
         sequences: list[str]
     ) -> dict[str, dict[str, np.ndarray]]:
-        """Get activations for all layers for a list of sequences.
-
+        """Get activations for all layers and sequences.
+        
         Args:
             sequences: List of sequences to analyze
-
+            
         Returns:
             Dictionary mapping sequences to dictionaries of layer activations.
             Structure: {seq: {layer: activation_array}}
         """
         # Tokenize all sequences at once
         tokens = self._prepare_input(sequences, batch=True)
-        
-        # Capture activations using hooks
-        raw_activations = self._setup_hooks()
-
         # Store original training state
         was_training = self.model.training
+        # Capture activations using hooks
+        raw_activations = self._setup_hooks()
 
         try:
             # Set to eval mode and disable gradients

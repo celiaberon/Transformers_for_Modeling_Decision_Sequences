@@ -9,7 +9,7 @@ import pandas as pd
 import seaborn as sns
 import torch
 import torch.nn.functional as F
-from interp_helpers import embed_sequence, pca_embeddings, predict_token
+from interp_helpers import embed_sequence, pca_embeddings
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
@@ -404,7 +404,7 @@ class BaseVisualizer:
         fake_counts.extend([1] * (len(sequences) - 1))
 
         # Get predicted tokens for block sequences
-        predicted_token = predict_token(self.analyzer.model, block_sequences)
+        predicted_token = [self.analyzer.predict_next_token(seq) for seq in block_sequences]
         palette = sns.color_palette('magma', n_colors=len(block_sequences))
 
         # Create additional points configuration
@@ -438,9 +438,8 @@ class BaseAnalyzer(ABC):
     
     Args:
         model: The transformer model to analyze
-        vocab: List of vocabulary tokens
-        stoi: Dictionary mapping tokens to indices
-        visualizer_class: Optional visualizer class to use
+        verbose: Whether to print debug information
+        visualizer_class: Class to use for visualization
     """
     
     def __init__(
@@ -449,7 +448,9 @@ class BaseAnalyzer(ABC):
         verbose=False,
         visualizer_class=BaseVisualizer
     ):
+        """Initialize the analyzer with a model."""
         self.model = model
+        self.device = next(model.parameters()).device
         self.verbose = verbose
         self.vocab = ['R', 'r', 'L', 'l']
         self.stoi = {token: idx for idx, token in enumerate(self.vocab)}
@@ -457,60 +458,50 @@ class BaseAnalyzer(ABC):
         self.n_heads = model.config.n_head
         self.n_embd = model.config.n_embd
         self.visualizer = visualizer_class(self)
-        
+
     def tokenize(
         self,
         sequences: str | list[str],
         batch: bool = False
     ) -> torch.Tensor:
-        """Convert sequences to token IDs.
+        """Convert input sequence(s) to tensor format.
         
         Args:
-            sequences: Single sequence or list of sequences to tokenize
-            batch: If True, always return a batch tensor even for single sequence
+            sequences: Input sequence or list of sequences
+            batch: Whether to return batched tensor, even for single sequence
             
         Returns:
             Tensor of token IDs, shape (batch_size, seq_len) if batch=True or
             multiple sequences, otherwise (seq_len,)
         """
-        # Convert single sequence to list for consistent processing
         if isinstance(sequences, str):
-            sequences = [sequences]
+            token_ids = [self.stoi[char] for char in sequences]
+            if batch:
+                return torch.tensor(token_ids, dtype=torch.long, device=self.device).unsqueeze(0)
+            return torch.tensor(token_ids, dtype=torch.long, device=self.device)
+        else:
+            token_ids = [[self.stoi[char] for char in sequence] for sequence in sequences]
+            return torch.tensor(token_ids, dtype=torch.long, device=self.device)
 
-        # Tokenize all sequences
-        token_ids = [
-            [self.stoi[char] for char in sequence]
-            for sequence in sequences
-        ]
-
-        # Convert to tensor
-        tensor = torch.tensor(token_ids)
-        
-        # Remove batch dimension if single sequence and batch=False
-        if len(sequences) == 1 and not batch:
-            tensor = tensor.squeeze(0)
-            
-        return tensor
-        
     def _prepare_input(
         self,
         sequences: str | list[str],
         batch: bool = False
     ) -> torch.Tensor:
-        """Prepare input sequences for model forward pass.
+        """Prepare input tensor for model.
         
         Args:
-            sequences: Single sequence or list of sequences to prepare
-            batch: If True, always return a batch tensor even for single sequence
+            sequences: Input sequence or list of sequences
+            batch: Whether to return batched tensor
             
         Returns:
-            Tensor ready for model input, shape (batch_size, seq_len)
+            Tensor ready for model input
         """
-        # Get token IDs
-        token_ids = self.tokenize(sequences, batch=batch)
-        # Ensure tensor is on correct device
-        return token_ids.to(self.model.device)
-    
+        if isinstance(sequences, str):
+            sequences = [sequences]
+        input_tensor = self.tokenize(sequences, batch=True)
+        return input_tensor.to(self.device)
+
     def get_embeddings(self, sequence: str, **kwargs) -> np.ndarray:
         """Get embeddings for a sequence."""
         return embed_sequence(self.model, sequence, **kwargs)

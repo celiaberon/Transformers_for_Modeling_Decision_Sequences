@@ -30,13 +30,21 @@ sns.set_theme(
         'figure.subplot.wspace': 0.1,
         })
 
+logger = None
+
+def initialize_logger(run):
+    """Initialize logger"""
+    global logger
+    logger = fm.setup_logging(run, 'interpretability', 'interp')
 
 def main(run: int | None = None, model_name: str | None = None):
     device = torch.device('mps' if torch.backends.mps.is_available() else 'cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using {device} device")
 
     run = run or fm.get_latest_run()
+    initialize_logger(run)
     model, model_info, config = load_trained_model(run, model_name=model_name, device=device, weights_only=False)
+    model.to(device)
     if model_name is None:
         model_name = model_info['model_name']
     else:
@@ -44,22 +52,30 @@ def main(run: int | None = None, model_name: str | None = None):
             'did not recover correct model')
 
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Total number of parameters: {total_params}")
+    logger.info(f"Total number of parameters: {total_params}")
 
     # Print model configuration details
-    print(f"Number of layers: {config.n_layer}")
-    print(f"Number of attention heads: {config.n_head}")
-    print(f"Embedding dimension: {config.n_embd}")
-    print(f"Vocabulary size: {config.vocab_size}")
-    print(f"Block size (context length): {config.block_size}")
+    logger.info(f"Number of layers: {config.n_layer}")
+    logger.info(f"Number of attention heads: {config.n_head}")
+    logger.info(f"Embedding dimension: {config.n_embd}")
+    logger.info(f"Vocabulary size: {config.vocab_size}")
+    logger.info(f"Block size (context length): {config.block_size}")
 
     T = model_info['dataloader']['Sequence length (T)']
 
     num_sequences = 300
     events, sequences, counts = interp.get_common_sequences(T, run=run, k=num_sequences)
 
-    block_sequences  = interp.get_block_transition_sequences(events, T, high_port=1)
+    block_sequences = interp.get_block_transition_sequences(events, T, high_port=1)
     block_sequences = [list(b.values) for b in block_sequences]
+
+    test_sequences = {i: s for i, s in enumerate(block_sequences[10:14], start=10)}
+    test_sequences = test_sequences | {
+        'fixed_0': ['LLLLLL', 'LLLLLL', 'LLLLLL', 'LLLLLL', 'LLLLLL', 'LLLLLl', 'LLLLll', 'LLLllr', 'LLllrR', 'LllrRR', 'llrRRR', 'lrRRRR'],
+        'fixed_1': ['LLLLLL', 'LLLLLl', 'LLLLlL', 'LLLlLL', 'LLlLLl', 'LlLLll', 'lLLlll', 'LLllll', 'Llllll', 'llllll', 'llllll', 'llllll'],
+        'fixed_2': ['LLLLLr', 'LLLLrl', 'LLLrlL', 'LLrlLL', 'LrlLLl', 'rlLLlL', 'lLLlLl', 'LLlLll', 'LlLlll', 'lLlllR', 'LlllRl', 'lllRlR'],
+        'fixed_3': ['LlLLLL', 'lLLLLl', 'LLLLlL', 'LLLlLL', 'LLlLLl', 'LlLLll', 'lLLlll', 'LLllll', 'LllllR', 'llllRR', 'lllRRR', 'llRRRR']
+    }
 
     attribution_analyzer = AttributionAnalyzer(model, method='inputs')
     embedding_analyzer = EmbeddingAnalyzer(model, config)
@@ -69,6 +85,7 @@ def main(run: int | None = None, model_name: str | None = None):
         _, fig = mlp_analyzer.analyze_layer_specialization(activations, token_pos=-1, method=method)
         fig_path = fm.get_experiment_file(f'mlp_selectivity_last_token_{method}.png', run, subdir=f'interp')
         fig.savefig(fig_path, bbox_inches='tight')
+        plt.close()
 
     dr_config = DimensionalityReductionConfig(
         token_pos=-1,
@@ -80,52 +97,58 @@ def main(run: int | None = None, model_name: str | None = None):
         fig, axs = mlp_analyzer.visualizer.plot_pca_by_layer(sequences, dr_config, counts=counts)
         fig_path = fm.get_experiment_file(f'mlp_pca_{sm}.png', run, subdir=f'interp')
         fig.savefig(fig_path, bbox_inches='tight')
-
+        plt.close()
     dr_config.method = 'tsne'
     for sm in ['token', 'concat']:
         dr_config.sequence_method = sm
         fig, axs = mlp_analyzer.visualizer.plot_pca_by_layer(sequences, dr_config, counts=counts, variance_explained=False)
         fig_path = fm.get_experiment_file(f'mlp_tsne_{sm}.png', run, subdir='interp')
         fig.savefig(fig_path, bbox_inches='tight')
+        plt.close()
 
-    for i, seq in enumerate(block_sequences[10:14], start=10):
+    for i, seq in test_sequences.items():
 
         dr_config = DimensionalityReductionConfig(
             token_pos=-1,
             sequence_method='token',
-            n_components=4
+            n_components=4,
+            method='pca'
         )
         fig, axs = mlp_analyzer.visualizer.plot_pca_across_trials(sequences, seq, ['input', 'gelu', 'output'], dr_config)
         fig_path = fm.get_experiment_file(f'mlp_pca_last_token.png', run, subdir=f'interp/bt_{i}')
         fig.savefig(fig_path, bbox_inches='tight')
+        plt.close()
 
         dr_config = DimensionalityReductionConfig(
             token_pos=-1,
             sequence_method='concat',
-            n_components=2
+            n_components=2,
+            method='pca'
         )
         fig, axs = mlp_analyzer.visualizer.plot_pca_across_trials(sequences, seq, ['input', 'gelu', 'output'], dr_config)
         fig_path = fm.get_experiment_file(f'mlp_pca_concat.png', run, subdir=f'interp/bt_{i}')
         fig.savefig(fig_path, bbox_inches='tight')
-    
+        plt.close()
+
         fig, axs = embedding_analyzer.visualizer.plot_pca_across_trials(sequences, seq, 'embed', dr_config)
         fig_path = fm.get_experiment_file(f'embed_pca_concat.png', run, subdir=f'interp/bt_{i}')
         fig.savefig(fig_path, bbox_inches='tight')
-    
+        plt.close()
         seq_ = interp.trim_leading_duplicates(seq)
         fig, axs = attribution_analyzer.plot_attribution_contiguous_sequences(seq_, method='embedding_erasure', as_prob=True)
         fig_path = fm.get_experiment_file(f'embedding_erasure.png', run, subdir=f'interp/bt_{i}')
         fig.savefig(fig_path, bbox_inches='tight')
-
+        plt.close()
         fig, axs = attribution_analyzer.plot_attribution_contiguous_sequences(seq_, method='contrastive', as_prob=True)
         fig_path = fm.get_experiment_file(f'contrastive.png', run, subdir=f'interp/bt_{i}')
         fig.savefig(fig_path, bbox_inches='tight')
+        plt.close()
 
         fig, axs = attribution_analyzer.plot_attribution_contiguous_sequences(seq_, method='lime')
         fig_path = fm.get_experiment_file(f'lime.png', run, subdir=f'interp/bt_{i}')
         fig.savefig(fig_path, bbox_inches='tight')
-
-    events, sequences, co   unts = interp.get_common_sequences(T, events=events, k=1000)
+        plt.close()
+    events, sequences, counts = interp.get_common_sequences(T, events=events, k=1000)
     mlp_activations = mlp_analyzer.get_activations(sequences)
     mlp_last_pos_by_layer = mlp_analyzer.get_activation_by_position(mlp_activations, token_pos=-1)
     embedding_activations = embedding_analyzer.get_activations(sequences)

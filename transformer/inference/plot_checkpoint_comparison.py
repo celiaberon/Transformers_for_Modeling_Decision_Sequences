@@ -213,7 +213,7 @@ def main(run=None, suffix: str = 'v'):
         fig.savefig(fig_path, bbox_inches='tight')
 
         fig, axes = plot_confusion_matrix_with_bars(
-            confusion_matrices_normalized,
+            confusion_matrices_normalized[domain],
             labels=confusion_labels,
             model_names=checkpoint_models,
             normalize='col',

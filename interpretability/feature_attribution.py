@@ -102,6 +102,9 @@ class AttributionAnalyzer:
         Returns:
             Model's prediction score for target token
         """
+        device = next(self.model.parameters()).device
+        input_tensor = input_tensor.to(device)
+        
         with torch.no_grad():
             base_logits, _ = self.model(input_tensor)
             if as_prob:

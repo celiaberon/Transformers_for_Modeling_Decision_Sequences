@@ -70,13 +70,15 @@ def trim_leading_duplicates(seq_list):
     return [first] + seq_list[i:]
 
 
-def predict_token(model, sequences):
-    tokenized_sequences = tokenize(sequences)
-    logits, _ = model(tokenized_sequences)
-    probs = F.softmax(logits[:, -1, :], dim=-1)
-    max_probs, predicted_token = probs.max(dim=1)
-    predicted_token = [itos[t] for t in predicted_token.detach().cpu().numpy()]
-    return predicted_token
+# def predict_token(model, sequences):
+#     tokenized_sequences = tokenize(sequences)
+#     device = next(model.parameters()).device
+#     tokenized_sequences = tokenized_sequences.to(device)
+#     logits, _ = model(tokenized_sequences)
+#     probs = F.softmax(logits[:, -1, :], dim=-1)
+#     max_probs, predicted_token = probs.max(dim=1)
+#     predicted_token = [itos[t] for t in predicted_token.detach().cpu().numpy()]
+#     return predicted_token
 
 
 def get_uncertain_sequences(sequences, model, feature='all',
@@ -98,6 +100,8 @@ def get_uncertain_sequences(sequences, model, feature='all',
         return combined_logits
 
     tokenized_sequences = tokenize(sequences)
+    device = next(model.parameters()).device
+    tokenized_sequences = tokenized_sequences.to(device)
 
     logits, _ = model(tokenized_sequences)
 
@@ -129,11 +133,11 @@ def get_uncertain_sequences(sequences, model, feature='all',
 
 
 def embed_sequence(model, sequence, flatten=True):
-
-    input_tensor = tokenize(sequence).unsqueeze(0).to(model.device)
+    device = next(model.parameters()).device
+    input_tensor = tokenize(sequence).unsqueeze(0).to(device)
 
     pos = torch.arange(0, len(input_tensor), dtype=torch.long,
-                       device=input_tensor.device)
+                       device=device)
 
     # Get token embeddings and positional embeddings (exactly as in model.forward)
     token_embeddings = model.transformer.wte(input_tensor)
