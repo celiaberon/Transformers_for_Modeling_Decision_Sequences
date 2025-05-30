@@ -13,7 +13,7 @@ import pandas as pd
 from feature_attribution import AttributionAnalyzer
 
 import utils.file_management as fm
-from interpretability.activations import MLPAnalyzer
+from interpretability.activations import EmbeddingAnalyzer, MLPAnalyzer
 from interpretability.analyzer import DimensionalityReductionConfig
 from utils.parse_data import load_trained_model
 
@@ -62,7 +62,7 @@ def main(run: int | None = None, model_name: str | None = None):
     block_sequences = [list(b.values) for b in block_sequences]
 
     attribution_analyzer = AttributionAnalyzer(model, method='inputs')
-    
+    embedding_analyzer = EmbeddingAnalyzer(model, config)
     mlp_analyzer = MLPAnalyzer(model, config)
     activations = mlp_analyzer.get_activations(sequences)
     for method in ['raw', 'choicediff', 'rewarddiff', 'choicepchange', 'rewardpchange']:
@@ -80,7 +80,6 @@ def main(run: int | None = None, model_name: str | None = None):
         fig, axs = mlp_analyzer.visualizer.plot_pca_by_layer(sequences, dr_config, counts=counts)
         fig_path = fm.get_experiment_file(f'mlp_pca_{sm}.png', run, subdir=f'interp')
         fig.savefig(fig_path, bbox_inches='tight')
-
 
     dr_config.method = 'tsne'
     for sm in ['token', 'concat']:
@@ -109,6 +108,10 @@ def main(run: int | None = None, model_name: str | None = None):
         fig_path = fm.get_experiment_file(f'mlp_pca_concat.png', run, subdir=f'interp/bt_{i}')
         fig.savefig(fig_path, bbox_inches='tight')
     
+        fig, axs = embedding_analyzer.visualizer.plot_pca_across_trials(sequences, seq, 'embed', dr_config)
+        fig_path = fm.get_experiment_file(f'embed_pca_concat.png', run, subdir=f'interp/bt_{i}')
+        fig.savefig(fig_path, bbox_inches='tight')
+    
         seq_ = interp.trim_leading_duplicates(seq)
         fig, axs = attribution_analyzer.plot_attribution_contiguous_sequences(seq_, method='embedding_erasure', as_prob=True)
         fig_path = fm.get_experiment_file(f'embedding_erasure.png', run, subdir=f'interp/bt_{i}')
@@ -122,14 +125,17 @@ def main(run: int | None = None, model_name: str | None = None):
         fig_path = fm.get_experiment_file(f'lime.png', run, subdir=f'interp/bt_{i}')
         fig.savefig(fig_path, bbox_inches='tight')
 
-    events, sequences, counts = interp.get_common_sequences(T, events=events, k=1000)
-    activations = mlp_analyzer.get_activations(sequences)
-    last_pos_by_layer = mlp_analyzer.get_activation_by_position(activations, token_pos=-1)
+    events, sequences, co   unts = interp.get_common_sequences(T, events=events, k=1000)
+    mlp_activations = mlp_analyzer.get_activations(sequences)
+    mlp_last_pos_by_layer = mlp_analyzer.get_activation_by_position(mlp_activations, token_pos=-1)
+    embedding_activations = embedding_analyzer.get_activations(sequences)
+    embedding_last_pos_by_layer = embedding_analyzer.get_activation_by_position(embedding_activations, token_pos=-1)
     fig, axs = plt.subplots(ncols=3,figsize=(8, 2.5), layout='constrained')
+    
     for ax, layer in zip(axs, mlp_analyzer.layers):
 
         # Calculate correlation between neurons
-        neuron_corr = pd.DataFrame(last_pos_by_layer[layer]).T.corr()
+        neuron_corr = pd.DataFrame(mlp_last_pos_by_layer[layer]).T.corr()
         ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(neuron_corr.to_numpy(), np.arange(len(neuron_corr)), replot=False)
         plt.close()
         interp.plot_similarity(ordered_sim_matrix, ordered_sequences, ax=ax)
@@ -140,15 +146,15 @@ def main(run: int | None = None, model_name: str | None = None):
     fig.savefig(fig_path, bbox_inches='tight')
 
     # Find maximal activations for each layer
-    max_activations = {}
+    mlp_max_activations = {}
     fig, axes_dict = mlp_analyzer.visualizer.create_mlp_visualization()
 
     for layer_name, axes in axes_dict.items():
-        max_activations[layer_name] = mlp_analyzer.find_maximal_activations(
-            last_pos_by_layer, layer_name, sequences)
+        mlp_max_activations[layer_name] = mlp_analyzer.find_maximal_activations(
+            mlp_last_pos_by_layer, layer_name, sequences)
 
         for neuron_idx, ax in enumerate(axes):
-            ax, token_counts = mlp_analyzer.analyze_neuron_patterns(max_activations, layer_name, neuron_idx, ax=ax, cbar=neuron_idx == (len(axes)-1))
+            ax, token_counts = mlp_analyzer.analyze_neuron_patterns(mlp_max_activations, layer_name, neuron_idx, ax=ax, cbar=neuron_idx == (len(axes)-1))
             avg_sequence = mlp_analyzer.get_average_sequence(token_counts, single_threshold=0, joint_threshold=0)
             avg_sequence_thresholded = mlp_analyzer.get_average_sequence(token_counts, single_threshold=0.6, joint_threshold=0.4)
             ax.set(title=f"Neuron {neuron_idx+1}\n{avg_sequence}\n{avg_sequence_thresholded}", xticks=[])
@@ -158,6 +164,29 @@ def main(run: int | None = None, model_name: str | None = None):
             ax.set(xlabel='')
     fig_path = fm.get_experiment_file('mlp_max_activations.png', run, subdir='interp')
     fig.savefig(fig_path, bbox_inches='tight')
+
+    embedding_max_activations = {}
+
+    for layer_name in embedding_analyzer.layers:
+        embedding_max_activations[layer_name] = embedding_analyzer.find_maximal_activations(
+            embedding_last_pos_by_layer, layer_name, sequences)
+
+    fig, axes_dict = embedding_analyzer.visualizer.create_mlp_visualization()
+
+    for neuron_idx, ax in enumerate(axes_dict['embed']):
+        ax, token_counts = embedding_analyzer.analyze_neuron_patterns(embedding_max_activations, layer_name, neuron_idx, verbose=False,
+                                                            ax=ax, cbar=neuron_idx == (len(axes_dict['embed'])-1))
+        avg_sequence = embedding_analyzer.get_average_sequence(token_counts, single_threshold=0, joint_threshold=0)
+        avg_sequence_thresholded = embedding_analyzer.get_average_sequence(token_counts, single_threshold=0.6, joint_threshold=0.4)
+        ax.set(title=f"Neuron {neuron_idx+1}\n{avg_sequence}\n{avg_sequence_thresholded}", xticks=[])
+        ax.set_aspect(1)
+        if neuron_idx > 0:
+            ax.set(ylabel='', yticks=[])
+        ax.set(xlabel='')
+
+    fig_path = fm.get_experiment_file(f'embed_max_act.png', run, subdir='interp')
+    fig.savefig(fig_path, bbox_inches='tight')
+
 
 if __name__ == "__main__":
     import argparse
