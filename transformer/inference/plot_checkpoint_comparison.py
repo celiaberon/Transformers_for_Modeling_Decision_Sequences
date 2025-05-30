@@ -166,11 +166,11 @@ def main(run=None, suffix: str = 'v'):
             
             _, conf_matrix, confusion_labels = compute_confusion_matrix(events, normalize=None)
             confusion_matrices[domain].append(conf_matrix)
-            checkpoint_models.append(label)
+            
 
             _, conf_matrix, _ = compute_confusion_matrix(events, normalize='col')
             confusion_matrices_normalized[domain].append(conf_matrix)
-
+        checkpoint_models.append(label)
         
         pred_policies = pts.calc_conditional_probs(events, add_grps='domain', htrials=2, sortby='pevent', pred_col='pred_switch')
         pred_policies['model'] = label
