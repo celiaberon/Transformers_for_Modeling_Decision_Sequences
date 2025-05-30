@@ -80,17 +80,29 @@ def parse_simulated_data(behavior_filename, high_port_filename, session_filename
     events.loc[events['trial_number'].isin(session_df['trial_number']), 'transition'] = np.nan
 
     events = get_block_positions(events)
+    events = get_previous_block_length(events)
     events = add_sequence_columns(events, seq_length=2)
     events = add_sequence_columns(events, seq_length=3)
 
     if clip_short_blocks:
-        # ID of short blocks, and blocks immediately following short blocks (not back to baseline).
-        # short_blocks = events.query('block_length < 20')['block_id'].unique()
-        # post_short_blocks = short_blocks + 1
         raise NotImplementedError
-        # For reference:
-        # sns.lineplot(data=events.query('block_position.between(0, 20) & ~block_id.isin(@post_short_blocks)'), x='block_position', y='switch', ax=ax)
-        # sns.lineplot(data=events.query('rev_block_position.between(-10, 1) & block_length > 20'), x='rev_block_position', y='switch', ax=ax)
+
+    return events
+
+
+def get_previous_block_length(events):
+    # ID of short blocks, and blocks immediately following short blocks (not back to baseline).
+    # short_blocks = events.query('block_length < 20')['block_id'].unique()
+    # post_short_blocks = short_blocks + 1
+
+    block_info = events[['session', 'block_id', 'block_length']].copy().drop_duplicates()
+    block_info['prev_block_length'] = block_info.groupby('session')['block_length'].shift(1)
+
+    events = events.merge(block_info[['session', 'block_id', 'prev_block_length']],
+                          on=['session', 'block_id'], how='left')
+    # For reference:
+    # sns.lineplot(data=events.query('block_position.between(0, 20) & ~block_id.isin(@post_short_blocks)'), x='block_position', y='switch', ax=ax)
+    # sns.lineplot(data=events.query('rev_block_position.between(-10, 1) & block_length > 20'), x='rev_block_position', y='switch', ax=ax)
 
     return events
 
@@ -104,7 +116,6 @@ def get_block_positions(events):
                           .groupby('session', group_keys=False)
                           .apply(lambda session_events: _get_session_block_positions(session_events), include_groups=False))
     events_with_blocks['session'] = session_col
-
 
     return events_with_blocks
 
@@ -227,7 +238,8 @@ def map_rl_to_pattern(seq):
 
 
 def add_sequence_columns(events, seq_length):
-    """Add sequence columns (history up to current trial) to events DataFrame.
+    """Add sequence columns (history up to but NOT INCLUDING current trial) to
+    events DataFrame.
 
     For a given sequence length N, adds two columns to track trial histories:
     - seqN_RL: right/left encoded sequence of choices/rewards for previous N
