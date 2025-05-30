@@ -31,13 +31,18 @@ sns.set_theme(
         })
 
 
-def main(run: int | None = None):
+def main(run: int | None = None, model_name: str | None = None):
     device = torch.device('mps' if torch.backends.mps.is_available() else 'cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using {device} device")
 
     run = run or fm.get_latest_run()
-    model, model_info, config = load_trained_model(run, model_name=None, device=device, weights_only=False)
-    
+    model, model_info, config = load_trained_model(run, model_name=model_name, device=device, weights_only=False)
+    if model_name is None:
+        model_name = model_info['model_name']
+    else:
+        assert (model_info['model_name'] == model_name) or (model_info['model_name'] == model_name.split('_cp')[0]), (
+            'did not recover correct model')
+
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total number of parameters: {total_params}")
 
@@ -153,3 +158,12 @@ def main(run: int | None = None):
             ax.set(xlabel='')
     fig_path = fm.get_experiment_file('mlp_max_activations.png', run, subdir='interp')
     fig.savefig(fig_path, bbox_inches='tight')
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--run', type=int, default=None)
+    parser.add_argument('--model_name', type=str, default=None)
+    args = parser.parse_args()
+    
+    main(run=args.run, model_name=args.model_name)
