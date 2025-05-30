@@ -335,7 +335,7 @@ def cluster_sequences_hierarchical(similarity_matrix, sequences, replot=True,
     is_square = (len(distance_matrix.shape) == 2 and 
                  distance_matrix.shape[0] == distance_matrix.shape[1])
 
-    if not is_square:
+    if is_square:
         # Convert condensed distance matrix to square form
         distance_matrix = squareform(distance_matrix)
 
