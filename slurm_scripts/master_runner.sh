@@ -4,13 +4,13 @@ setup_environment
 # Parameters for experiment sweeps (or single)
 LAYERS_ARRAY=(1)
 HEADS_ARRAY=(1)
-EPOCHS_ARRAY=(10)
+EPOCHS_ARRAY=(100)
 TRAIN_STEPS_ARRAY=(100000)
 CONTEXT_LENGTH_ARRAY=(6)
 EMBD_DIM_ARRAY=(4)
 BATCH_SIZE_ARRAY=(256)
 DOMAIN_CONFIG_ARRAY=("three_domains.ini")
-DOMAIN_ID_ARRAY=("A") # "B" "C" "B_not_sticky")
+DOMAIN_ID_ARRAY=("A" "B" "C" "B_not_sticky")
 EXPERIMENT_TYPE="basic"  # define the experiment you are running
 
 # Options are:
@@ -26,7 +26,7 @@ initialize_run
 NEXT_RUN_NUMBER=$RUN_NUMBER
 
 # At the top of your script
-MAX_CONCURRENT_JOBS=13
+MAX_CONCURRENT_JOBS=12
 # Function to count currently running/pending jobs
 count_running_jobs() {
     local username=$(whoami)

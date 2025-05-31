@@ -76,7 +76,7 @@ def main(run: int | None = None, model_name: str | None = None):
     sample_sequences = np.random.choice(sequences, size=20)
     embeddings, similarities = interp.sequence_embedding_similarity(model, sample_sequences, stoi)
 
-    ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(similarities, sample_sequences, replot=False)
+    ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(similarities, sample_sequences, replot=False, metric='euclidean')
     fig, ax = interp.plot_similarity(ordered_sim_matrix, ordered_sequences)
     ax.set(title=f'run {run}')
     fig_path = fm.get_experiment_file(f'sample_sequence_similarity.png', run, subdir='interp')
@@ -99,12 +99,12 @@ def main(run: int | None = None, model_name: str | None = None):
     fig, axs = plt.subplots(ncols=2, figsize=(7, 3.5), layout='constrained')
 
     _, similarities = interp.sequence_embedding_similarity(model, high_uncertainty_sequences[:20], stoi)
-    ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(similarities, high_uncertainty_sequences[:20], replot=False)
+    ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(similarities, high_uncertainty_sequences[:20], replot=False, metric='euclidean')
     fig, axs[0] = interp.plot_similarity(ordered_sim_matrix, ordered_sequences, fig=fig, ax=axs[0])
     axs[0].set(title='High Uncertainty Sequences')
 
     _, similarities = interp.sequence_embedding_similarity(model, low_uncertainty_sequences[:20], stoi)
-    ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(similarities, low_uncertainty_sequences[:20], replot=False)
+    ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(similarities, low_uncertainty_sequences[:20], replot=False, metric='euclidean')
     fig, axs[1] = interp.plot_similarity(ordered_sim_matrix, ordered_sequences, fig=fig, ax=axs[1])
     axs[1].set(title='Low Uncertainty Sequences')
     fig.suptitle('Choice Uncertainty')
@@ -119,12 +119,12 @@ def main(run: int | None = None, model_name: str | None = None):
     fig, axs = plt.subplots(ncols=2, figsize=(7, 3.5), layout='constrained')
 
     _, similarities = interp.sequence_embedding_similarity(model, high_overall_uncertainty_sequences[:20], stoi)
-    ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(similarities, high_overall_uncertainty_sequences[:20], replot=False)
+    ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(similarities, high_overall_uncertainty_sequences[:20], replot=False, metric='euclidean')
     fig, axs[0] = interp.plot_similarity(ordered_sim_matrix, ordered_sequences, fig=fig, ax=axs[0])
     axs[0].set(title='High Uncertainty Sequences')
 
     _, similarities = interp.sequence_embedding_similarity(model, low_overall_uncertainty_sequences[:20], stoi)
-    ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(similarities, low_overall_uncertainty_sequences[:20], replot=False)
+    ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(similarities, low_overall_uncertainty_sequences[:20], replot=False, metric='euclidean')
     fig, axs[1] = interp.plot_similarity(ordered_sim_matrix, ordered_sequences, fig=fig, ax=axs[1])
     axs[1].set(title='Low Uncertainty Sequences')
     fig.suptitle('Overall Uncertainty (including reward)')
@@ -253,7 +253,7 @@ def main(run: int | None = None, model_name: str | None = None):
 
         # Calculate correlation between neurons
         neuron_corr = pd.DataFrame(mlp_last_pos_by_layer[layer]).T.corr()
-        ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(neuron_corr.to_numpy(), np.arange(len(neuron_corr)), replot=False)
+        ordered_sequences, ordered_sim_matrix, Z_ordered = interp.cluster_sequences_hierarchical(neuron_corr.to_numpy(), np.arange(len(neuron_corr)), replot=False, metric='euclidean')
         plt.close()
         interp.plot_similarity(ordered_sim_matrix, ordered_sequences, ax=ax)
         ax.set_title(layer.capitalize())

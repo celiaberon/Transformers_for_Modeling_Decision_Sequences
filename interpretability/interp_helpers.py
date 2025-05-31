@@ -331,11 +331,14 @@ def cluster_sequences_hierarchical(similarity_matrix, sequences, replot=True,
     else:
         distance_matrix = similarity_matrix
 
+    # Ensure diagonal is zero
+    np.fill_diagonal(distance_matrix, 0)
+
     # Check if matrix is already in square form
     is_square = (len(distance_matrix.shape) == 2 and 
                  distance_matrix.shape[0] == distance_matrix.shape[1])
 
-    if is_square:
+    if not is_square:
         # Convert condensed distance matrix to square form
         distance_matrix = squareform(distance_matrix)
 
