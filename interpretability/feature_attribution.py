@@ -323,8 +323,8 @@ class AttributionAnalyzer:
                 gradient = layer_gradients[layer_name][0]
                 
                 # Debug prints for signs
-                act_sign = torch.sign(activation).float().mean().item()
-                grad_sign = torch.sign(gradient).float().mean().item()
+                # act_sign = torch.sign(activation).float().mean().item()
+                # grad_sign = torch.sign(gradient).float().mean().item()
                 # print(f"{layer_name}:")
                 # print(f"  Activation sign (mean): {act_sign:.3f}")
                 # print(f"  Gradient sign (mean): {grad_sign:.3f}")

@@ -97,6 +97,7 @@ class BaseVisualizer:
         self,
         sequences: list[str],
         max_sequences: int = 5,
+        vertical=False,
         **kwargs
     ) -> None:
         """Analyze attention patterns for multiple sequences.
@@ -108,12 +109,17 @@ class BaseVisualizer:
         """
         sequences_to_analyze = sequences[:max_sequences]
             
+        n_rows = 1
         n_cols = len(sequences_to_analyze)
         
+        if vertical:
+            n_rows, n_cols = n_cols, n_rows
+        
         # Create figure with minimal margins
-        fig, axs = plt.subplots(ncols=n_cols, figsize=(3*n_cols, 0.5))        
+        fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols,
+                                figsize=(3*n_cols-vertical, 0.5*n_rows+vertical))        
             
-        for ax, seq in zip(axs, sequences_to_analyze):
+        for ax, seq in zip(axs.ravel(), sequences_to_analyze):
             # Use analyzer's methods to get probabilities and next token
             probs = self.analyzer.predict_next_token_probs(seq)
             next_token = self.analyzer.predict_next_token(seq, probs)
