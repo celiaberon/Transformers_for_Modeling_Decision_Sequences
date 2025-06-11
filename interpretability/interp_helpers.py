@@ -51,6 +51,10 @@ def get_block_transition_sequences(events, T, trial_range=(-3, 9), high_port=1):
         seq = 'LL'
     elif high_port == 0:
         seq = 'RR'
+
+    assert events.trial_number.nunique() == len(events), (
+        'Trial numbers are not unique as an index'
+    )
     block_starts_1 = events.query(f'block_position == 0\
          & block_id > 0 & high_port == {high_port} & seq2_RL == "{seq}"\
          & block_length > 10 & prev_block_length > 10').trial_number.values
@@ -303,74 +307,87 @@ def pca_embeddings(model, n_components=2, token_mapping=None):
     return pca, embedded
 
 
-def cluster_sequences_hierarchical(similarity_matrix, sequences, replot=True,
-                                   method='ward', metric='euclidean'):
+def to_condensed_distance(matrix, is_similarity=True):
+    """
+    Convert a square similarity/correlation or distance matrix to a condensed distance vector.
+    """
+    from scipy.spatial.distance import squareform
+
+    # If it's a similarity/correlation matrix, convert to distance
+    if is_similarity:
+        distance_matrix = 1 - matrix
+    else:
+        distance_matrix = matrix.copy()
+    # Force symmetry
+    distance_matrix = (distance_matrix + distance_matrix.T) / 2
+    # Set diagonal to zero
+    np.fill_diagonal(distance_matrix, 0)
+    # Ensure non-negative (for numerical stability)
+    distance_matrix = np.abs(distance_matrix)
+    # Now convert to condensed
+    condensed = squareform(distance_matrix)
+    return condensed
+
+
+def cluster_sequences_hierarchical(
+    matrix, sequences, replot=True, method='ward', metric='euclidean', is_similarity=True
+):
     """
     Perform hierarchical clustering with optimal leaf ordering.
 
-    Parameters:
-    -----------
-    similarity_matrix : numpy.ndarray
-        Matrix of similarities between sequences. Can be either:
-        - Square matrix (n x n) of similarities/distances
-        - Condensed distance matrix (1D array of upper triangular elements)
+    Parameters
+    ----------
+    matrix : np.ndarray
+        Similarity/correlation or distance matrix (square or condensed).
     sequences : list of str
-        List of sequences 
-    method : str, default='ward'
-        Linkage method: 'ward', 'complete', 'average', or 'single'
-    metric : str, default='euclidean'
-        Distance metric (use 'precomputed' if similarity_matrix is a distance matrix)
+        List of sequence labels.
+    replot : bool
+        Whether to plot the reordered similarity matrix.
+    method : str
+        Linkage method: 'ward', 'complete', 'average', or 'single'.
+    metric : str
+        Distance metric (use 'precomputed' if matrix is a distance matrix).
+    is_similarity : bool
+        If True, input is a similarity/correlation matrix; if False, a distance matrix.
+
+    Returns
+    -------
+    ordered_sequences : list of str
+        Sequences in clustered order.
+    ordered_sim_matrix : np.ndarray
+        Similarity matrix reordered by clustering.
+    Z_ordered : np.ndarray
+        Linkage matrix with optimal leaf ordering.
     """
     from scipy.cluster.hierarchy import (dendrogram, linkage,
                                          optimal_leaf_ordering)
     from scipy.spatial.distance import squareform
 
-    # Convert similarity to distance if needed (distance = 1 - similarity)
-    if metric != 'precomputed':
-        distance_matrix = 1 - similarity_matrix
+    # Convert to condensed distance vector using the helper
+    if len(matrix.shape) == 2 and matrix.shape[0] == matrix.shape[1]:
+        condensed_distance = to_condensed_distance(matrix, is_similarity=is_similarity)
     else:
-        distance_matrix = similarity_matrix
-
-    # Ensure diagonal is zero
-    np.fill_diagonal(distance_matrix, 0)
-
-    # Check if matrix is already in square form
-    is_square = (len(distance_matrix.shape) == 2 and 
-                 distance_matrix.shape[0] == distance_matrix.shape[1])
-
-    if not is_square:
-        # Convert condensed distance matrix to square form
-        distance_matrix = squareform(distance_matrix)
+        condensed_distance = matrix
 
     # Compute linkage matrix
-    Z = linkage(distance_matrix, method=method)
+    Z = linkage(condensed_distance, method=method)
 
-    # Apply optimal leaf ordering to get a better visualization
-    Z_ordered = optimal_leaf_ordering(Z, distance_matrix)
+    # For optimal leaf ordering, need the square distance matrix
+    square_distance = squareform(condensed_distance)
 
-    # Plot dendrogram
-    fig, ax = plt.subplots(figsize=(8, 4), layout='constrained')
-    dendrogram(
-        Z_ordered,
-        labels=sequences,
-        leaf_rotation=90,
-        leaf_font_size=10,
-        color_threshold=0.7*np.max(Z_ordered[:,2]),  # Threshold for coloring branches
-        ax=ax
-    )
-    ax.set(title=f'Hierarchical Clustering ({method} linkage)')
+    Z_ordered = optimal_leaf_ordering(Z, square_distance)
 
     # Get the optimal ordering of sequences
     ordered_indices = dendrogram(Z_ordered, no_plot=True)['leaves']
     ordered_sequences = [sequences[i] for i in ordered_indices]
 
     # Reorder similarity matrix according to this ordering
-    ordered_sim_matrix = similarity_matrix[ordered_indices][:, ordered_indices]
+    ordered_sim_matrix = matrix[ordered_indices][:, ordered_indices]
 
     if replot:
         fig, ax = plt.subplots(figsize=(0.18 * len(sequences), 0.18 * len(sequences)),
                                layout='constrained')
-        fig, ax = plot_similarity(ordered_sim_matrix, ordered_sequences, fig=fig, ax=ax)
+        plot_similarity(ordered_sim_matrix, ordered_sequences, fig=fig, ax=ax)
         ax.set(title='Similarity Matrix (Ordered by Hierarchical Clustering)')
 
     return ordered_sequences, ordered_sim_matrix, Z_ordered
