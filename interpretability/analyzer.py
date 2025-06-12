@@ -306,7 +306,7 @@ class BaseVisualizer:
             )
             axs2 = None
 
-        if n_layers == 1:
+        if n_layers == 1 and not variance_explained:
             axs1 = [axs1]
             axs2 = [axs2] if axs2 is not None else None
 

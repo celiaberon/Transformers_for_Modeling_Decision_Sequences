@@ -34,13 +34,14 @@ def get_common_sequences(T, run=None, events=None, min_count=50, k=10):
     if events is None:
         events = parse.parse_simulated_data(*parse.get_data_filenames(run, suffix='v'))
 
-    if f'seq{T}_RL' not in events.columns or all(events[f'seq{T}_RL'].isna()):
-        events = parse.add_sequence_columns(events, T)
+    events_ = events.copy()
+    if f'seq{T}_RL' not in events_.columns or all(events_[f'seq{T}_RL'].isna()):
+        events_ = parse.add_sequence_columns(events_, T)
 
-    vc = events[f'seq{T}_RL'].value_counts()
+    vc = events_[f'seq{T}_RL'].dropna().value_counts()
     sequences = vc[vc > min_count].index.tolist()[:k]
     sequences_values = vc[vc > min_count].values.tolist()[:k]
-    return events, sequences, sequences_values
+    return events_, sequences, sequences_values
 
 
 def get_block_transition_sequences(events, T, trial_range=(-3, 9), high_port=1):
@@ -58,7 +59,7 @@ def get_block_transition_sequences(events, T, trial_range=(-3, 9), high_port=1):
     block_starts_1 = events.query(f'block_position == 0\
          & block_id > 0 & high_port == {high_port} & seq2_RL == "{seq}"\
          & block_length > 10 & prev_block_length > 10').trial_number.values
-    sequences = [events.loc[np.arange(trial_range[0], trial_range[1]) + b, 'seq6_RL']
+    sequences = [events.loc[np.arange(trial_range[0], trial_range[1]) + b, f'seq{T}_RL']
               for b in block_starts_1]
     return sequences
 
