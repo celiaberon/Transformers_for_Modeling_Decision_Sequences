@@ -61,6 +61,7 @@ def get_block_transition_sequences(events, T, trial_range=(-3, 9), high_port=1):
          & block_length > 10 & prev_block_length > 10').trial_number.values
     sequences = [events.loc[np.arange(trial_range[0], trial_range[1]) + b, f'seq{T}_RL']
               for b in block_starts_1]
+    sequences = [seq for seq in sequences if not any(s is None for s in seq)]
     return sequences
 
 
