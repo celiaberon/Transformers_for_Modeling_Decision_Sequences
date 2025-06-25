@@ -1,7 +1,10 @@
 """Helper functions for analyzing transformer model components."""
 
+import os
+import sys
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Protocol, Tuple
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,6 +16,28 @@ from interp_helpers import embed_sequence, pca_embeddings
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
+# Import GPT model
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from transformer.transformer import GPT
+
+
+@dataclass
+class InterpretabilityConfig:
+    """Base configuration for interpretability analysis."""
+    
+    def __init__(
+        self,
+        device: str = 'cpu',
+        batch_size: int = 32,
+        max_sequences: int = 1000,
+        random_state: int = 42,
+        verbose: bool = False
+    ):
+        self.device = device
+        self.batch_size = batch_size
+        self.max_sequences = max_sequences
+        self.random_state = random_state
+        self.verbose = verbose
 
 class DimensionalityReductionConfig:
     """Configuration for activation analysis.
@@ -51,6 +76,7 @@ class BaseVisualizer:
         self.analyzer = analyzer
         self.plot_context = None  # Can be 'single', 'multi_head', etc.
         self.seq_idx = None
+        self.vocab = analyzer.vocab
         
     def plot_token_probs(
         self,
@@ -82,7 +108,7 @@ class BaseVisualizer:
             **kwargs
         )
         
-        for i, char in enumerate(self.analyzer.vocab):
+        for i, char in enumerate(self.vocab):
             ax.text(
                 i + 0.5, 0.5, char,
                 ha='center', va='center',
@@ -450,9 +476,10 @@ class BaseAnalyzer(ABC):
     
     def __init__(
         self,
-        model,
-        verbose=False,
-        visualizer_class=BaseVisualizer
+        model: GPT,
+        verbose: bool = False,
+        visualizer_class = BaseVisualizer,
+        config: Optional[InterpretabilityConfig] = None
     ):
         """Initialize the analyzer with a model."""
         self.model = model
@@ -460,10 +487,13 @@ class BaseAnalyzer(ABC):
         self.verbose = verbose
         self.vocab = ['R', 'r', 'L', 'l']
         self.stoi = {token: idx for idx, token in enumerate(self.vocab)}
+        self.itos = {idx: token for idx, token in enumerate(self.vocab)}
         self.n_layers = model.config.n_layer
         self.n_heads = model.config.n_head
         self.n_embd = model.config.n_embd
         self.visualizer = visualizer_class(self)
+        self.config = config or InterpretabilityConfig()
+        self._hooks = []
 
     def tokenize(
         self,
@@ -545,6 +575,25 @@ class BaseAnalyzer(ABC):
         probs = self.predict_next_token_probs(sequence)
         return dict(zip(self.vocab, probs))
 
+    def get_sequence_targets(self, sequences: list[str], target_position: int = -1) -> list[int]:
+        """Create target labels from sequences.
+        
+        Args:
+            sequences: List of input sequences
+            target_position: Position of target token
+            
+        Returns:
+            List of target labels
+        """
+        targets = []
+        for seq in sequences:
+            if len(seq) > abs(target_position):
+                target_token = seq[target_position]
+                targets.append(self.stoi[target_token])
+            else:
+                raise ValueError(f"Sequence {seq} is too short to have a token at position {target_position}")
+        return targets
+
     def count_tokens(self, seqs: list[str]) -> pd.DataFrame:
         """Count token frequencies at each position across a list of sequences.
 
@@ -584,6 +633,30 @@ class BaseAnalyzer(ABC):
                 layer activations
         """
         pass
+
+    def get_layer_activations(
+        self,
+        sequences: list[str],
+        layer: str
+    ) -> dict[str, np.ndarray]:
+        """Get activations for a specific layer for a list of sequences.
+        
+        Args:
+            sequences: List of sequences to analyze
+            layer: Layer to get activations from
+            
+        Returns:
+            Dictionary mapping sequences to their activation vectors for the
+            specified layer. Structure: {seq: activation_array}
+        """
+        # Get all layer activations
+        all_activations = self.get_activations(sequences)
+        
+        # Extract just the requested layer
+        return {
+            seq: acts[layer]
+            for seq, acts in all_activations.items()
+        }
 
     def compute_pca_embeddings(
         self,
@@ -627,24 +700,253 @@ class BaseAnalyzer(ABC):
 
         return model, X_embedding, seq_to_embedding
 
-    def get_activation_by_position(
+    def _validate_hook_outputs(
         self,
-        activations: dict[str, dict[str, np.ndarray]],
-        token_pos: int = -1
-    ) -> dict[str, dict[str, np.ndarray]]:
-        """Extract activations for a specific token position.
+        raw_activations: dict[str, list[np.ndarray]],
+        expected_count: int,
+        layer_name: str | None = None
+    ) -> None:
+        """Validate that hooks captured the expected number of activations.
 
         Args:
-            activations: Dictionary of captured activations
-            token_pos: Position in sequence to analyze (-1 for last token)
-
-        Returns:
-            Dictionary of activations at specified position
+            raw_activations: Dictionary of captured activations
+            expected_count: Expected number of activation sets
+            layer_name: Optional specific layer to validate
+            
+        Raises:
+            ValueError: If activations were not captured correctly
         """
-        return {
-            layer_name: {
-                seq: act[layer_name][token_pos]
-                for seq, act in activations.items()
-            }
-            for layer_name in self.layers
-        }
+        layers_to_check = [layer_name] if layer_name else list(raw_activations.keys())
+        # layers_to_check = [layer_name] if layer_name else self.layers
+        for layer in layers_to_check:
+            if not raw_activations[layer]:
+                raise ValueError(f"No activations captured for layer {layer}")
+            if len(raw_activations[layer]) != 1:  # Should only have one forward pass
+                raise ValueError(
+                    f"Expected 1 forward pass for layer {layer}, "
+                    f"got {len(raw_activations[layer])}"
+                )
+            
+            # Validate shapes based on component type
+            act = raw_activations[layer][0]
+            
+            # Attention components (qk_, ov_) are 4D: [batch, n_heads, seq_len, seq_len/head_dim]
+            if layer.startswith(('qk_', 'ov_')):
+                if len(act.shape) != 4:
+                    raise ValueError(
+                        f"Expected 4D attention tensor for {layer}, "
+                        f"got shape {act.shape}"
+                    )
+            else:
+                # Other components (MLP, layers, etc.) are 3D: [batch, seq_len, hidden_dim]
+                if len(act.shape) != 3:
+                    raise ValueError(
+                        f"Expected 3D activation tensor for {layer}, "
+                        f"got shape {act.shape}"
+                    )
+            
+            # Validate batch size for all components
+            if act.shape[0] != expected_count:
+                raise ValueError(
+                    f"Expected batch size {expected_count} for {layer}, "
+                    f"got {act.shape[0]}"
+                )
+
+    # def get_activation_by_position(
+    #     self,
+    #     activations: dict[str, dict[str, np.ndarray]],
+    #     token_pos: int = -1
+    # ) -> dict[str, dict[str, np.ndarray]]:
+    #     """Extract activations for a specific token position.
+
+    #     Args:
+    #         activations: Dictionary of captured activations
+    #         token_pos: Position in sequence to analyze (-1 for last token)
+
+    #     Returns:
+    #         Dictionary of activations at specified position
+    #     """
+    #     return {
+    #         layer_name: {
+    #             seq: act[layer_name][token_pos]
+    #             for seq, act in activations.items()
+    #         }
+    #         for layer_name in self.layers
+    #     }
+
+    def _setup_hooks_for_components(
+        self, 
+        components: List[str] = None
+    ) -> Tuple[Dict[str, List[torch.Tensor]], List[torch.utils.hooks.RemovableHandle]]:
+        """Set up hooks to capture activations from any model components.
+        
+        Args:
+            components: List of component names to capture. Can include:
+                - 'layer_0', 'layer_1', etc. for transformer block outputs
+                - 'input', 'gelu', 'output' for MLP components within blocks
+                - 'final' for final layer norm output
+                - 'embed' for token embeddings
+                - 'attn_0', 'attn_1', etc. for attention output
+                - 'qk_0', 'qk_1', etc. for QK attention weights
+                - 'ov_0', 'ov_1', etc. for OV attention (weighted values)
+                
+        Returns:
+            Tuple of (activations dict, hooks list)
+        """
+        activations = {}
+        hooks = []
+        
+        if components is None:
+            components = self.layers
+
+        if self.verbose:
+            print(f"Setting up hooks for components: {components}")
+        
+        def make_hook(component_name: str):
+            def hook(module, input, output):
+                # For MLP input components, capture the input
+                if component_name.startswith('input'):
+                    activations[component_name].append(input[0].detach().cpu().numpy())
+                else:
+                    # For all other components, capture the output
+                    activations[component_name].append(output.detach().cpu().numpy())
+            return hook
+        
+        def make_attention_hook(component_name: str):
+            """Special hook for capturing QK and OV attention separately."""
+            def hook(module, input, output):
+                # Get the input to the attention module
+                x = input[0]  # Shape: [batch, seq_len, n_embd]
+                B, T, C = x.size()
+
+                # Compute Q, K, V
+                qkv = module.c_attn(x)  # Shape: [batch, seq_len, 3*n_embd]
+                q, k, v = qkv.split(module.n_embd, dim=2)  # Each: [batch, seq_len, n_embd]
+                
+                # Reshape for multi-head attention
+                q = q.view(B, T, module.n_head, C // module.n_head).transpose(1, 2)
+                k = k.view(B, T, module.n_head, C // module.n_head).transpose(1, 2)
+                v = v.view(B, T, module.n_head, C // module.n_head).transpose(1, 2)
+                
+                # Compute QK attention weights
+                qk_attn = torch.matmul(q, k.transpose(-2, -1)) / (C ** 0.5)
+                qk_attn = qk_attn.masked_fill(module.bias[:, :, :T, :T] == 0, float('-inf'))
+                qk_attn = F.softmax(qk_attn, dim=-1)
+                
+                # Compute OV attention (weighted values)
+                ov_output = torch.matmul(qk_attn, v)
+                
+                # Store based on component type
+                if component_name.startswith('qk_'):
+                    activations[component_name].append(qk_attn.detach().cpu().numpy())
+                elif component_name.startswith('ov_'):
+                    activations[component_name].append(ov_output.detach().cpu().numpy())
+                else:
+                    # Regular attention output
+                    activations[component_name].append(output.detach().cpu().numpy())
+            return hook
+
+        # Register hooks based on component type
+        for component in components:
+            activations[component] = []
+            if component == 'embed':
+                # Hook on token embeddings
+                hook = self.model.transformer.wte.register_forward_hook(
+                    make_hook('embed')
+                )
+                hooks.append(hook)
+                
+            elif component == 'final':
+                # Hook on final layer norm
+                hook = self.model.transformer.ln_f.register_forward_hook(
+                    make_hook('final')
+                )
+                hooks.append(hook)
+            
+            else:
+                layer_idx = int(component.split('_')[1])
+                if layer_idx > len(self.model.transformer.h):
+                    raise ValueError(f"Layer index {layer_idx} is out of range for {component}")
+                
+                if component.startswith(('layer_', 'attn_')):
+                    hook = self.model.transformer.h[layer_idx].register_forward_hook(
+                        make_hook(component)
+                    )
+                elif component.startswith(('qk_', 'ov_')):
+                    hook = self.model.transformer.h[layer_idx].attn.register_forward_hook(
+                        make_attention_hook(component)
+                    )
+                elif component.startswith('input'):
+                    hook = self.model.transformer.h[layer_idx].mlp.c_fc.register_forward_hook(
+                        make_hook(component)
+                    )
+                elif component.startswith('gelu'):
+                    hook = self.model.transformer.h[layer_idx].mlp.gelu.register_forward_hook(
+                        make_hook(component)
+                    )
+                elif component.startswith('output'):
+                    hook = self.model.transformer.h[layer_idx].mlp.c_proj.register_forward_hook(
+                        make_hook(component)
+                    )
+                else:
+                    raise ValueError(f"Unknown component: {component}")
+                hooks.append(hook)
+        
+        if self.verbose:
+            print(f"Registered {len(hooks)} hooks")
+            
+        return activations, hooks
+
+    def _extract_internal_states(
+        self,
+        sequences: List[str],
+        components: List[str],
+    ) -> Dict[str, torch.Tensor]:
+        """Extract internal states from any model components.
+        
+        Args:
+            sequences: List of input sequences
+            components: List of component names to capture
+            
+        Returns:
+            Dictionary mapping component names to their states as {layer: tensor[batch_size, seq_len, hidden_dim]}
+        """
+        # Tokenize sequences
+        tokens = self._prepare_input(sequences, batch=True)
+        
+        # Store original training state
+        was_training = self.model.training
+        
+        # Set up hooks
+        raw_activations, hooks = self._setup_hooks_for_components(components)
+        
+        try:
+            # Set to eval mode and disable gradients
+            self.model.eval()
+            with torch.no_grad():
+                self.model(tokens)
+                # Validate hook outputs
+                self._validate_hook_outputs(raw_activations, len(sequences))
+        finally:
+            # Restore original training state
+            if was_training:
+                self.model.train()
+            
+            # Clean up hooks
+            for hook in hooks:
+                hook.remove()
+        
+        # Process captured activations
+        activations = {}
+        for component, acts_list in raw_activations.items():
+            if acts_list:
+                # Take the first (and should be only) activation
+                activations[component] = acts_list[0]
+        
+        return activations
+
+    def cleanup_hooks(self):
+        """Clean up any registered hooks."""
+        for hook in self._hooks:
+            hook.remove()
+        self._hooks.clear()

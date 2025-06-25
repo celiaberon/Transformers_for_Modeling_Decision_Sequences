@@ -183,7 +183,6 @@ class ActivationAnalyzer(BaseAnalyzer):
         self._hooks: list[torch.utils.hooks.RemovableHandle] = []
         self.model_component = 'Activation'  # Will be overridden by subclasses
         self.layer_composition = self._get_layer_composition(model_config)
-        self.layers = layers or list(self.layer_composition.keys())
         self.model_config = model_config
 
     def _get_layer_composition(self, config: Any) -> dict[str, int]:
@@ -199,95 +198,6 @@ class ActivationAnalyzer(BaseAnalyzer):
             "Subclasses must implement _get_layer_composition"
         )
 
-    def _setup_hooks(self) -> dict[str, list[np.ndarray]]:
-        """Set up hooks to capture activations from model layers.
-
-        Returns:
-            Dictionary to store captured activations
-        """
-        activations = {layer: [] for layer in self.layers}
-        if self.verbose:
-            print(
-                f"Setting up hooks for {self.model_component} with layers: "
-                f"{self.layers}"
-            )
-
-        def make_hook(layer_name: str):
-            def hook(module, input, output):
-                if layer_name == 'input':
-                    activations[layer_name].append(
-                        input[0].detach().cpu().numpy()
-                    )
-                else:
-                    activations[layer_name].append(
-                        output.detach().cpu().numpy()
-                    )
-            return hook
-
-        # Register hooks only for layers we want to track
-        for block in self.model.transformer.h:
-            if self.model_component.lower() == 'mlp':
-                if 'input' in self.layers:
-                    self._hooks.append(
-                        block.mlp.c_fc.register_forward_hook(
-                            make_hook('input')
-                        )
-                    )
-                if 'gelu' in self.layers:
-                    self._hooks.append(
-                        block.mlp.gelu.register_forward_hook(
-                            make_hook('gelu')
-                        )
-                    )
-                if 'output' in self.layers:
-                    self._hooks.append(
-                        block.mlp.c_proj.register_forward_hook(
-                            make_hook('output')
-                        )
-                    )
-        if self.verbose:
-            print(f"Registered {len(self._hooks)} hooks")
-        return activations
-
-    def _validate_hook_outputs(
-        self,
-        raw_activations: dict[str, list[np.ndarray]],
-        expected_count: int,
-        layer_name: str | None = None
-    ) -> None:
-        """Validate that hooks captured the expected number of activations.
-        
-        Args:
-            raw_activations: Dictionary of captured activations
-            expected_count: Expected number of activation sets
-            layer_name: Optional specific layer to validate
-            
-        Raises:
-            ValueError: If activations were not captured correctly
-        """
-        layers_to_check = [layer_name] if layer_name else self.layers
-        for layer in layers_to_check:
-            if not raw_activations[layer]:
-                raise ValueError(f"No activations captured for layer {layer}")
-            if len(raw_activations[layer]) != 1:  # Should only have one forward pass
-                raise ValueError(
-                    f"Expected 1 forward pass for layer {layer}, "
-                    f"got {len(raw_activations[layer])}"
-                )
-            
-            # Validate shapes
-            act = raw_activations[layer][0]
-            if len(act.shape) != 3:
-                raise ValueError(
-                    f"Expected 3D activation tensor for layer {layer}, "
-                    f"got shape {act.shape}"
-                )
-            if act.shape[0] != expected_count:
-                raise ValueError(
-                    f"Expected batch size {expected_count} for layer {layer}, "
-                    f"got {act.shape[0]}"
-                )
-
     def get_activations(
         self,
         sequences: list[str]
@@ -301,41 +211,16 @@ class ActivationAnalyzer(BaseAnalyzer):
             Dictionary mapping sequences to dictionaries of layer activations.
             Structure: {seq: {layer: activation_array}}
         """
-        # Tokenize all sequences at once
-        tokens = self._prepare_input(sequences, batch=True)
-        # Store original training state
-        was_training = self.model.training
-        # Capture activations using hooks
-        raw_activations = self._setup_hooks()
 
-        try:
-            # Set to eval mode and disable gradients
-            self.model.eval()
-            with torch.no_grad():
-                self.model(tokens)
-                
-                # Validate hook outputs
-                self._validate_hook_outputs(raw_activations, len(sequences))
-        finally:
-            # Restore original training state
-            if was_training:
-                self.model.train()
+        # Use unified hook system to capture activations
+        raw_activations = self._extract_internal_states(sequences, self.layers)
 
-            # Clean up hooks
-            i = 0
-            for hook in self._hooks:
-                hook.remove()
-                i += 1
-            self._hooks.clear()
-            if self.verbose:
-                print(f"Cleaned up {i} hooks")
-
-        # Convert raw activations to a more usable format
-        # raw_activations: {layer: [tensor[batch_size, seq_len, hidden_dim]]}
+        # Convert raw activations to the expected format
+        # raw_activations: {layer: tensor[batch_size, seq_len, hidden_dim]}
         # -> {seq: {layer: activation_array}}
         activations = {
             seq: {
-                layer_name: acts[0][i]  # acts[0] gets the tensor, [i] gets i-th sequence
+                layer_name: acts[i]  # [i] gets i-th sequence
                 for layer_name, acts in raw_activations.items()
             }
             for i, seq in enumerate(sequences)
@@ -343,29 +228,6 @@ class ActivationAnalyzer(BaseAnalyzer):
 
         return activations
 
-    def get_layer_activations(
-        self,
-        sequences: list[str],
-        layer: str
-    ) -> dict[str, np.ndarray]:
-        """Get activations for a specific layer for a list of sequences.
-        
-        Args:
-            sequences: List of sequences to analyze
-            layer: Layer to get activations from
-            
-        Returns:
-            Dictionary mapping sequences to their activation vectors for the
-            specified layer. Structure: {seq: activation_array}
-        """
-        # Get all layer activations
-        all_activations = self.get_activations(sequences)
-        
-        # Extract just the requested layer
-        return {
-            seq: acts[layer]
-            for seq, acts in all_activations.items()
-        }
 
     def get_activation_by_position(
         self,
@@ -790,6 +652,8 @@ class MLPAnalyzer(ActivationAnalyzer):
         """
         super().__init__(model, config, layers)
         self.model_component = 'MLP'
+        self.mlp_components = layers or list(self.layer_composition.keys())
+        self.layers = [f'{c}_{i}' for c in self.mlp_components for i in range(config.n_layer)]
 
     def _get_layer_composition(self, config: Any) -> dict[str, int]:
         """Get the dimensions of each layer in the model component.
@@ -824,6 +688,7 @@ class EmbeddingAnalyzer(ActivationAnalyzer):
         """
         super().__init__(model, config, layers)
         self.model_component = 'Embedding'
+        self.layers = layers or list(self.layer_composition.keys())
 
     def _get_layer_composition(self, config: Any) -> dict[str, int]:
         """Get the dimensions of each layer in the model component.
