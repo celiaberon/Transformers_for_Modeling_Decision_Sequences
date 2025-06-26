@@ -63,6 +63,15 @@ class RFLR_mouse:
 
         self.last_choice = choice
         return choice
+    
+    def passive_estimator(self, c_t, r_t):
+        """
+        Passive estimator for the reward-choice interaction.
+        """
+        self.update_phi(c_t, r_t)
+        log_odds = self.compute_log_odds(c_t)
+        prob_right = self.sigmoid(log_odds)
+        return self.phi_t, log_odds, prob_right
 
 def main():
     agent = RFLR_mouse(alpha=0.75, beta=2.1, tau=1.4)
