@@ -561,7 +561,7 @@ class BaseAnalyzer(ABC):
         with torch.no_grad():
             logits, _ = self.model(input_ids)
         next_token_logits = logits[:, -1, :]
-        probs = F.softmax(next_token_logits, dim=-1)
+        probs = self.logits_to_probabilities(next_token_logits)
         return probs.detach().cpu().numpy()[0]
     
     def predict_next_token(self, sequence: str, probs=None) -> str:
@@ -574,6 +574,34 @@ class BaseAnalyzer(ABC):
         """Get probability distribution over next tokens."""
         probs = self.predict_next_token_probs(sequence)
         return dict(zip(self.vocab, probs))
+
+    def logits_to_probabilities(self, logits: torch.Tensor, dim: int = -1) -> torch.Tensor:
+        """Convert logits to probabilities using softmax.
+        
+        Args:
+            logits: Input logits tensor
+            dim: Dimension to apply softmax over (default: -1)
+            
+        Returns:
+            Probability tensor
+        """
+        return F.softmax(logits, dim=dim)
+    
+    def extract_target_logits(self, logits_by_layer: Dict[str, torch.Tensor], 
+                            target_position: int = -1) -> Dict[str, torch.Tensor]:
+        """Extract logits for a specific target position from layer logits.
+        
+        Args:
+            logits_by_layer: Dictionary mapping layer names to logits with shape [batch, seq_len, vocab_size]
+            target_position: Position of target token to extract
+            
+        Returns:
+            Dictionary mapping layer names to target position logits with shape [batch, vocab_size]
+        """
+        return {
+            layer_name: logits[:, target_position, :]
+            for layer_name, logits in logits_by_layer.items()
+        }
 
     def get_sequence_targets(self, sequences: list[str], target_position: int = -1) -> list[int]:
         """Create target labels from sequences.
@@ -752,28 +780,6 @@ class BaseAnalyzer(ABC):
                     f"got {act.shape[0]}"
                 )
 
-    # def get_activation_by_position(
-    #     self,
-    #     activations: dict[str, dict[str, np.ndarray]],
-    #     token_pos: int = -1
-    # ) -> dict[str, dict[str, np.ndarray]]:
-    #     """Extract activations for a specific token position.
-
-    #     Args:
-    #         activations: Dictionary of captured activations
-    #         token_pos: Position in sequence to analyze (-1 for last token)
-
-    #     Returns:
-    #         Dictionary of activations at specified position
-    #     """
-    #     return {
-    #         layer_name: {
-    #             seq: act[layer_name][token_pos]
-    #             for seq, act in activations.items()
-    #         }
-    #         for layer_name in self.layers
-    #     }
-
     def _setup_hooks_for_components(
         self, 
         components: List[str] = None
@@ -864,7 +870,7 @@ class BaseAnalyzer(ABC):
                 hooks.append(hook)
             
             else:
-                layer_idx = int(component.split('_')[1])
+                layer_idx = int(component.split('_')[-1])
                 if layer_idx > len(self.model.transformer.h):
                     raise ValueError(f"Layer index {layer_idx} is out of range for {component}")
                 
