@@ -1,6 +1,6 @@
 import glob
-import os
 import logging
+import os
 import sys
 
 
@@ -175,6 +175,35 @@ def parse_model_info(run=None, model_name=None):
                 model_info[current_section][key] = value
     
     return model_info
+
+
+def get_domain_params(run=None, domain_id=None, suffix='tr'):
+    """
+    Get the parameters for a specific domain.
+    """
+    metadata_file = get_experiment_file("metadata.txt", run)
+
+    with open(metadata_file, 'r') as f:
+        data_section = None
+        current_section = None
+        domain = None
+        for line in f:
+            line = line.strip()
+            if line.startswith('Dataset'):
+                data_section = line.split(' ')[-1]
+            if data_section == suffix:
+                if current_section == 'domain_id':
+                    domain = line
+                    current_section = 'post_domain_id'
+                if (current_section == 'agent_params') & (domain_id is domain):
+                    params = line
+                    return domain, eval(params)
+                if line.startswith("Task parameters:"):
+                    current_section = 'domain_id'
+                if line.startswith("Agent parameters:"):
+                    current_section = 'agent_params'
+                
+    return None
 
 
 def get_latest_model_name(run=None):
