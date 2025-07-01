@@ -10,6 +10,7 @@ import pandas as pd
 import torch
 
 import utils.file_management as fm
+from synthetic_data_generation.agent import RFLR_mouse
 from transformer.transformer import GPT, GPTConfig
 
 logger = None
@@ -22,7 +23,8 @@ def get_data_filenames(run, suffix='tr'):
     return behavior_filename, high_port_filename, session_filename
 
 
-def parse_simulated_data(behavior_filename, high_port_filename, session_filename, clip_short_blocks=False):
+def parse_simulated_data(behavior_filename, high_port_filename, session_filename,
+                         clip_short_blocks=False):
     """Parse simulated data from behavior, high port, and session files.
 
     Args:
@@ -36,6 +38,10 @@ def parse_simulated_data(behavior_filename, high_port_filename, session_filename
 
     Notes: Typically for simulated data used as input for training model.
     """
+
+    run_and_suffix = behavior_filename.split('_')[-1].split('.')[0]
+    suffix = 'tr' if run_and_suffix.endswith('tr') else 'v'
+    run = int(run_and_suffix[:-len(suffix)])
 
     behavior_data = fm.read_sequence(behavior_filename)
     high_port_data = fm.read_sequence(high_port_filename)
@@ -83,9 +89,85 @@ def parse_simulated_data(behavior_filename, high_port_filename, session_filename
     events = get_previous_block_length(events)
     events = add_sequence_columns(events, seq_length=2)
     events = add_sequence_columns(events, seq_length=3)
+    events = parse_passive_estimator(run, events, suffix=suffix)
 
     if clip_short_blocks:
         raise NotImplementedError
+
+    return events
+
+
+def parse_passive_estimator(run, events, suffix='tr'):
+    """Parse passive estimator data from events."""
+    # Initialize columns
+    events['phi'] = None
+    events['logodds'] = None
+    events['pright'] = None
+
+    # Get unique domains and their parameters
+    domains = events.domain.unique()
+    params = {}
+    for domain in domains:
+        params[domain] = fm.get_domain_params(run=run, domain_id=domain, suffix=suffix)[1]
+
+    for session in events.session.unique():
+        session_mask = events.session == session
+        session_events = events[session_mask]
+        domain_id = session_events.domain.unique().item()
+        domain_params = params[domain_id]
+        agent = RFLR_mouse(**domain_params)
+        
+        # Get full session data
+        choices = session_events.choice.values
+        rewards = session_events.reward.values
+        
+        # Process full session at once
+        phi_values, logodds_values, pright_values = agent.passive_estimator(
+            choices, rewards
+        )
+        
+        events.loc[session_mask, 'phi'] = phi_values
+        events.loc[session_mask, 'logodds'] = logodds_values
+        events.loc[session_mask, 'pright'] = pright_values
+
+    return events
+
+
+def parse_passive_estimator_qlearning(run, events, suffix='tr'):
+    """Parse Q-learning passive estimator data from events."""
+    # Initialize columns
+    events['rpe'] = None
+    events['q_left'] = None
+    events['q_right'] = None
+    events['q_logodds'] = None
+    events['q_pright'] = None
+
+    # Get unique domains and their parameters
+    domains = events.domain.unique()
+    params = {}
+    for domain in domains:
+        params[domain] = fm.get_domain_params(run=run, domain_id=domain, suffix=suffix)[1]
+
+    for session in events.session.unique():
+        session_mask = events.session == session
+        session_events = events[session_mask]
+        domain_id = session_events.domain.unique().item()
+        domain_params = params[domain_id]
+        agent = RFLR_mouse(**domain_params)
+        
+        choices = session_events.choice.values
+        rewards = session_events.reward.values
+        
+        rpes, qs, logodds, pright = agent.passive_estimator_qlearning(
+            choices, rewards
+        )
+        
+        # Assign all values at once using the mask
+        events.loc[session_mask, 'rpe'] = rpes
+        events.loc[session_mask, 'q_left'] = qs[:, 0]
+        events.loc[session_mask, 'q_right'] = qs[:, 1]
+        events.loc[session_mask, 'q_logodds'] = logodds
+        events.loc[session_mask, 'q_pright'] = pright
 
     return events
 
