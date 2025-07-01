@@ -39,6 +39,7 @@ class InterpretabilityConfig:
         self.random_state = random_state
         self.verbose = verbose
 
+
 class DimensionalityReductionConfig:
     """Configuration for activation analysis.
 
@@ -166,7 +167,6 @@ class BaseVisualizer:
         config: DimensionalityReductionConfig,
         counts: Optional[list[int]] = None,
         color_map: Optional[dict[str, str]] = None,
-        marker_map: Optional[dict[str, str]] = None,
         labels: Optional[list[str]] = None,
         **kwargs
     ) -> plt.Axes:
@@ -179,15 +179,12 @@ class BaseVisualizer:
             config: Configuration for dimensionality reduction
             counts: Optional list of counts for each sequence
             color_map: Optional mapping from sequence to color
-            marker_map: Optional mapping from sequence to marker
             labels: Optional list of labels for each point
             **kwargs: Additional plotting arguments
             
         Returns:
             Axes with plotted points
         """
-        if counts is not None:
-            norm_counts = np.log1p(counts) / np.log1p(np.max(counts))
             
         for i, (seq, emb) in enumerate(zip(sequences, embeddings)):
             # Determine color
@@ -197,18 +194,16 @@ class BaseVisualizer:
                 color = 'red' if seq[config.token_pos] in ('R', 'r') else 'blue'
                 
             # Determine marker
-            if marker_map is not None:
-                marker = marker_map[seq]
-            else:
-                marker = 'o' if seq[config.token_pos] in ('R', 'L') else 'x'
+            marker = 'o' if seq[config.token_pos] in ('R', 'L') else 'x'
                 
-            # Determine size and alpha
-            if counts is not None:
-                alpha = norm_counts[i]
-                size = 10 * norm_counts[i]
+            # Determine alpha
+            if 'alpha' in kwargs:
+                pass
+            elif counts is not None:
+                norm_counts = np.log1p(counts) / np.log1p(np.max(counts))
+                kwargs['alpha'] = norm_counts[i]
             else:
-                alpha = 1.0
-                size = 10
+                kwargs['alpha'] = 1.0
                 
             # Plot point
             ax.scatter(
@@ -216,8 +211,7 @@ class BaseVisualizer:
                 emb[1],
                 color=color,
                 marker=marker,
-                alpha=alpha,
-                s=size,
+                s=10,
                 label=labels[i] if labels is not None else None,
                 **kwargs
             )
@@ -225,7 +219,7 @@ class BaseVisualizer:
             # Add annotation for small datasets
             if len(sequences) < 20:
                 ax.annotate(
-                    seq[config.token_pos],
+                    seq,
                     (emb[0], emb[1]),
                     fontsize=12
                 )
@@ -296,7 +290,8 @@ class BaseVisualizer:
         counts: Optional[list[int]] = None,
         layers: Optional[list[str]] = None,
         variance_explained: bool = True,
-        additional_points: Optional[list[tuple[list[str], dict]]] = None
+        additional_points: Optional[list[tuple[list[str], dict]]] = None,
+        **kwargs
     ) -> tuple[plt.Figure, tuple[np.ndarray, Optional[np.ndarray]]]:
         """Plot PCA visualization of activations by layer.
 
@@ -318,7 +313,6 @@ class BaseVisualizer:
         elif not isinstance(layers, list):
             layers = [layers]
 
-        # Create figure with appropriate layout
         n_layers = len(layers)
         if variance_explained:
             fig = plt.figure(figsize=(n_layers * 3, 4))
@@ -350,7 +344,8 @@ class BaseVisualizer:
                 embeddings,
                 sequences,
                 config,
-                counts=counts
+                counts=counts,
+                **kwargs
             )
             
             if additional_points is not None:
@@ -384,17 +379,17 @@ class BaseVisualizer:
                     range(1, config.n_components + 1),
                     np.cumsum(model.explained_variance_ratio_),
                     marker='o',
-                    color='red'
+                    color='k'
                 )
                 axs2[j].set(
                     xlabel='Dimension',
                     xticks=range(1, config.n_components + 1),
-                    ylabel='Explained Variance' if j == 0 else '',
+                    ylabel='Explained Variance\n(Cumulative)' if j == 0 else '',
                     ylim=(0, 1.05)
                 )
 
         title = (
-            f'{self.analyzer.model_component} Activations\n with '
+            f'{self.analyzer.model_component} Activations\n '
             f'{config.sequence_method} method'
         )
         fig.suptitle(title, y=0.9)
@@ -431,10 +426,6 @@ class BaseVisualizer:
         if isinstance(layers, str):
             layers = [layers]
 
-        # Just for aesthetics in the PCA plot
-        fake_counts = [10000]
-        fake_counts.extend([1] * (len(sequences) - 1))
-
         # Get predicted tokens for block sequences
         predicted_token = [self.analyzer.predict_next_token(seq) for seq in block_sequences]
         palette = sns.color_palette('magma', n_colors=len(block_sequences))
@@ -455,10 +446,10 @@ class BaseVisualizer:
         return self.plot_pca_by_layer(
             sequences,
             config,
-            counts=fake_counts,
             layers=layers,
             variance_explained=False,
-            additional_points=additional_points
+            additional_points=additional_points,
+            alpha=0.05
         )
 
 
