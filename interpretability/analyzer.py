@@ -452,6 +452,256 @@ class BaseVisualizer:
             alpha=0.05
         )
 
+    def plot_2d_surface(
+        self,
+        embeddings: np.ndarray,
+        ax: plt.Axes = None,
+        method: str = 'kde',
+        bins: int = 100,
+        scale: str = 'linear',
+        normalize: bool = False,
+        additional_points: Optional[list[tuple[list[str], dict]]] = None,
+        **kwargs
+    ) -> tuple[plt.Figure, plt.Axes]:
+        """
+        Plot a 2D surface over PC1 vs PC2 using density estimation (KDE) or smoothed histogram.
+        Args:
+            embeddings: (N, 2) array
+            ax: matplotlib Axes (optional, will create if None)
+            method: 'kde' (kernel density) or 'hist' (smoothed histogram)
+            bins: number of bins for histogram
+            scale: 'linear', 'log', 'sqrt', or 'power' (power=0.5)
+            normalize: whether to normalize to [0,1]
+            additional_points: Optional list of (sequences, plot_kwargs) tuples
+                for additional points to plot on the surface
+            **kwargs: passed to pcolormesh/contourf
+        Returns:
+            tuple of (figure, axes)
+        """
+        # Initialize figure and axes if not provided
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8,6))
+        else:
+            fig = ax.figure
+            
+        x, y = embeddings[:, 0], embeddings[:, 1]
+        xi = np.linspace(x.min(), x.max(), bins)
+        yi = np.linspace(y.min(), y.max(), bins)
+        xi, yi = np.meshgrid(xi, yi)
+        if method == 'kde':
+            from scipy.stats import gaussian_kde
+            kde = gaussian_kde(np.vstack([x, y]))
+            zi = kde(np.vstack([xi.ravel(), yi.ravel()])).reshape(xi.shape)
+        elif method == 'hist':
+            from scipy.ndimage import gaussian_filter
+            H, xedges, yedges = np.histogram2d(x, y, bins=bins)
+            zi = gaussian_filter(H.T, sigma=2)
+            xi, yi = np.meshgrid(
+                (xedges[:-1] + xedges[1:]) / 2,
+                (yedges[:-1] + yedges[1:]) / 2
+            )
+        else:
+            raise ValueError("method must be 'kde' or 'hist'")
+        
+        # Apply scaling
+        zi_scaled = self._apply_scaling(zi, scale, normalize)
+        
+        surf = ax.pcolormesh(xi, yi, zi_scaled, **kwargs)
+        plt.colorbar(surf, ax=ax, label=f'Density ({scale})')
+        ax.set(xlabel='PC1', ylabel='PC2')
+        
+        # Add additional points if provided
+        if additional_points is not None:
+            for add_seqs, plot_kwargs in additional_points:
+                # For additional points, we need to get their embeddings
+                # This assumes the sequences are in the same embedding space
+                # You might need to adjust this based on your specific use case
+                ax.scatter(
+                    add_seqs[:, 0] if hasattr(add_seqs, 'shape') else add_seqs[0],
+                    add_seqs[:, 1] if hasattr(add_seqs, 'shape') else add_seqs[1],
+                    label=plot_kwargs.pop('label', None),
+                    **plot_kwargs
+                )
+        
+        return fig, ax
+
+    def plot_3d_surface(
+        self,
+        embeddings: np.ndarray,
+        ax = None,
+        method: str = 'kde',
+        bins: int = 50,
+        scale: str = 'linear',
+        normalize: bool = False,
+        additional_points: Optional[list[tuple[list[str], dict]]] = None,
+        **kwargs
+    ) -> tuple[plt.Figure, plt.Axes]:
+        """
+        Plot a 3D surface using PC1, PC2, PC3 as a density surface.
+        Args:
+            embeddings: (N, 3) array
+            ax: 3D matplotlib Axes (optional, will create if None)
+            method: 'kde' or 'hist'
+            bins: number of bins for histogram
+            cmap: colormap
+            scale: 'linear', 'log', 'sqrt', or 'power' (power=0.5)
+            normalize: whether to normalize to [0,1]
+            additional_points: Optional list of (sequences, plot_kwargs) tuples
+                for additional points to plot on the surface
+            **kwargs: passed to plot_surface
+        Returns:
+            tuple of (figure, axes)
+        """
+        # Initialize figure and axes if not provided
+        if ax is None:
+            from mpl_toolkits.mplot3d import Axes3D
+            fig = plt.figure(figsize=(10, 8))
+            ax = fig.add_subplot(111, projection='3d')
+        else:
+            fig = ax.figure
+            
+        x, y, z = embeddings[:, 0], embeddings[:, 1], embeddings[:, 2]
+        xi = np.linspace(x.min(), x.max(), bins)
+        yi = np.linspace(y.min(), y.max(), bins)
+        xi, yi = np.meshgrid(xi, yi)
+        if method == 'kde':
+            from scipy.stats import gaussian_kde
+            kde = gaussian_kde(np.vstack([x, y]))
+            zi = kde(np.vstack([xi.ravel(), yi.ravel()])).reshape(xi.shape)
+        elif method == 'hist':
+            from scipy.ndimage import gaussian_filter
+            H, xedges, yedges = np.histogram2d(x, y, bins=bins)
+            zi = gaussian_filter(H.T, sigma=2)
+            xi, yi = np.meshgrid(
+                (xedges[:-1] + xedges[1:]) / 2,
+                (yedges[:-1] + yedges[1:]) / 2
+            )
+        else:
+            raise ValueError("method must be 'kde' or 'hist'")
+        
+        # Apply scaling
+        zi_scaled = self._apply_scaling(zi, scale, normalize)
+        
+        surf = ax.plot_surface(xi, yi, zi_scaled, edgecolor='none', **kwargs)
+        ax.set(xlabel='PC1', ylabel='PC2', zlabel=f'Density ({scale})')
+        plt.colorbar(surf, ax=ax, shrink=0.5, aspect=5)
+        
+        # Add additional points if provided
+        if additional_points is not None:
+            for add_seqs, plot_kwargs in additional_points:
+                # For additional points, we need to get their embeddings
+                # This assumes the sequences are in the same embedding space
+                ax.scatter(
+                    add_seqs[:, 0] if hasattr(add_seqs, 'shape') else add_seqs[0],
+                    add_seqs[:, 1] if hasattr(add_seqs, 'shape') else add_seqs[1],
+                    add_seqs[:, 2] if hasattr(add_seqs, 'shape') else add_seqs[2],
+                    label=plot_kwargs.pop('label', None),
+                    **plot_kwargs
+                )
+        
+        return fig, ax
+
+    def _apply_scaling(self, zi: np.ndarray, scale: str, normalize: bool) -> np.ndarray:
+        """
+        Apply scaling and normalization to density values.
+        Args:
+            zi: density values
+            scale: 'linear', 'log', 'sqrt', or 'power'
+            normalize: whether to normalize to [0,1]
+        Returns:
+            scaled density values
+        """
+        zi_scaled = zi.copy()
+        
+        # Apply scaling
+        if scale == 'log':
+            # Add small constant to avoid log(0)
+            zi_scaled = np.log(zi_scaled + 1e-10)
+        elif scale == 'sqrt':
+            zi_scaled = np.sqrt(zi_scaled)
+        elif scale == 'power':
+            zi_scaled = np.power(zi_scaled, 0.5)
+        elif scale == 'linear':
+            pass  # no scaling
+        else:
+            raise ValueError("scale must be 'linear', 'log', 'sqrt', or 'power'")
+        
+        # Apply normalization
+        if normalize:
+            zi_min, zi_max = zi_scaled.min(), zi_scaled.max()
+            if zi_max > zi_min:
+                zi_scaled = (zi_scaled - zi_min) / (zi_max - zi_min)
+        
+        return zi_scaled
+
+    def plot_pca_surface_by_layer(
+        self,
+        sequences: list[str],
+        config: DimensionalityReductionConfig,
+        layers: Optional[list[str]] = None,
+        surface_method: str = 'density',
+        **kwargs
+    ) -> tuple[plt.Figure, list[plt.Axes]]:
+        """Plot PCA embeddings as surfaces by layer.
+
+        Args:
+            sequences: List of sequences to analyze
+            config: Configuration for dimensionality reduction
+            layers: Layers to analyze. If None, uses all layers.
+            surface_method: Surface method ('density', 'contour', 'heatmap')
+            **kwargs: Additional arguments for surface plotting
+
+        Returns:
+            Figure and axes objects
+        """
+        if layers is None:
+            layers = self.layers
+        elif not isinstance(layers, list):
+            layers = [layers]
+
+        n_layers = len(layers)
+        fig, axs = plt.subplots(
+            ncols=n_layers,
+            figsize=(n_layers * 4, 3)
+        )
+
+        if n_layers == 1:
+            axs = [axs]
+
+        for j, (ax, layer) in enumerate(zip(axs, layers)):
+            # Compute PCA embeddings
+            model, embeddings, seq_to_embedding = self.compute_pca_embeddings(
+                sequences,
+                layer,
+                config
+            )
+            
+            # Plot surface
+            self.visualizer.plot_2d_surface(
+                ax,
+                embeddings,
+                sequences,
+                config,
+                method=surface_method,
+                **kwargs
+            )
+
+            ax.set(
+                title=f'{layer.capitalize()} - {surface_method.title()}',
+                xlabel='Dim 1' if j == 0 else '',
+                ylabel='Dim 2'
+            )
+
+        title = (
+            f'{self.model_component} Activations Surface\n '
+            f'{config.sequence_method} method - {surface_method}'
+        )
+        fig.suptitle(title, y=0.95)
+        sns.despine()
+        plt.tight_layout()
+        
+        return fig, axs
+
 
 class BaseAnalyzer(ABC):
     """Base class for analyzing transformer model components.
@@ -947,3 +1197,5 @@ class BaseAnalyzer(ABC):
         for hook in self._hooks:
             hook.remove()
         self._hooks.clear()
+
+    
