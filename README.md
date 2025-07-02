@@ -76,3 +76,5 @@ Project Organization
             ├── conditional_switching.png
             ├── selecting_high_reward_port.png
             └── switch_probabilities.png
+
+Current focus: Tracing a Ground Truth Function End to End through a Transformer. We want to be able to recover the RFLR function that generated the data that the transformer was trained on.
