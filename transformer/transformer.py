@@ -70,17 +70,46 @@ class Block(nn.Module):
         self.ln_2 = nn.LayerNorm(config.n_embd)
         self.mlp = MLP(config)
 
-    def forward(self, x, return_attn_weights=False):
+    def forward(self, x, return_attn_weights=False, return_residual=False):
+        """Forward through one transformer block.
+
+        The function can optionally return:
+            • attn_weights – if `return_attn_weights` is True
+            • residual_snapshot – a clone of the residual stream **after** the
+              attention sub-layer but **before** the MLP sub-layer when
+              `return_residual` is True.
+
+        Return signatures (to keep call-sites predictable):
+            1. x                                         (no extras requested)
+            2. x, attn_weights                          (only attn)
+            3. x, residual_snapshot                     (only residual)
+            4. x, attn_weights, residual_snapshot       (both requested)
+        """
+
+        # --- Attention sub-layer -------------------------------------------------
+        x_residual = x
+
         if return_attn_weights:
-            x_residual = x
             x, attn_weights = self.attn(self.ln_1(x), return_attn_weights=True)
-            x = x_residual + x
-            x = x + self.mlp(self.ln_2(x))
-            return x, attn_weights
         else:
-            x = x + self.attn(self.ln_1(x))
-            x = x + self.mlp(self.ln_2(x))
-            return x
+            x = self.attn(self.ln_1(x))
+
+        x = x_residual + x  # add & norm residual connection
+
+        # Capture snapshot after attention, before MLP if requested
+        residual_snapshot = x.clone().detach() if return_residual else None
+
+        # --- MLP sub-layer -------------------------------------------------------
+        x = x + self.mlp(self.ln_2(x))
+
+        # Decide what to return based on flags
+        if return_attn_weights and return_residual:
+            return x, attn_weights, residual_snapshot
+        if return_attn_weights:
+            return x, attn_weights
+        if return_residual:
+            return x, residual_snapshot
+        return x
 
 
 @dataclass
@@ -158,31 +187,49 @@ class GPT(nn.Module):
         return loss
 
     def forward(self, idx, targets=None, return_attn_weights=False, return_residual=False, **kwargs):
-        """Forward pass through the model"""
-        B, T = idx.size()
-        assert T <= self.config.block_size, f"Sequence length {T} exceeds block size {self.config.block_size}"
+        """Forward pass through the full transformer.
 
+        When `return_residual` is True we expose the residual stream **after the
+        final block's attention sub-layer but before its MLP sub-layer**.  This
+        aligns with the snapshot captured inside each `Block`.
+        """
+
+        B, T = idx.size()
+        assert T <= self.config.block_size, (
+            f"Sequence length {T} exceeds block size {self.config.block_size}")
+
+        # Token & position embeddings ------------------------------------------------
         pos = torch.arange(0, T, dtype=torch.long, device=idx.device)
         x = self.transformer.wte(idx) + self.transformer.wpe(pos)
 
         attn_weights_all_layers = []
+        residual_snapshot = None  # will hold snapshot from **last** block
+
+        # Transformer blocks ---------------------------------------------------------
         for block in self.transformer.h:
-            if return_attn_weights:
+            if return_attn_weights and return_residual:
+                x, attn_weights, residual_snapshot = block(
+                    x, return_attn_weights=True, return_residual=True)
+                attn_weights_all_layers.append(attn_weights.detach())
+            elif return_attn_weights:
                 x, attn_weights = block(x, return_attn_weights=True)
                 attn_weights_all_layers.append(attn_weights.detach())
+            elif return_residual:
+                x, residual_snapshot = block(x, return_residual=True)
             else:
                 x = block(x)
-        
-        third_residual_snapshot = x.clone().detach() if return_residual else None
 
+        # Final layer norm & head ----------------------------------------------------
         logits = self.lm_head(self.transformer.ln_f(x))
         loss = self.calculate_loss(logits, targets, **kwargs)
-        
+
+        # Assemble outputs -----------------------------------------------------------
+        if return_attn_weights and return_residual:
+            return logits, loss, attn_weights_all_layers, residual_snapshot
         if return_attn_weights:
-            # (batch_size, num_heads, seq_len, seq_len)
             return logits, loss, attn_weights_all_layers
         if return_residual:
-            return logits, loss, third_residual_snapshot
+            return logits, loss, residual_snapshot
         return logits, loss
 
     @classmethod
