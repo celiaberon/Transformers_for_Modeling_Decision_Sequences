@@ -157,7 +157,7 @@ class GPT(nn.Module):
                 }
         return loss
 
-    def forward(self, idx, targets=None, return_attn_weights=False, **kwargs):
+    def forward(self, idx, targets=None, return_attn_weights=False, return_residual=False, **kwargs):
         """Forward pass through the model"""
         B, T = idx.size()
         assert T <= self.config.block_size, f"Sequence length {T} exceeds block size {self.config.block_size}"
@@ -172,6 +172,8 @@ class GPT(nn.Module):
                 attn_weights_all_layers.append(attn_weights.detach())
             else:
                 x = block(x)
+        
+        third_residual_snapshot = x.clone().detach() if return_residual else None
 
         logits = self.lm_head(self.transformer.ln_f(x))
         loss = self.calculate_loss(logits, targets, **kwargs)
@@ -179,6 +181,8 @@ class GPT(nn.Module):
         if return_attn_weights:
             # (batch_size, num_heads, seq_len, seq_len)
             return logits, loss, attn_weights_all_layers
+        if return_residual:
+            return logits, loss, third_residual_snapshot
         return logits, loss
 
     @classmethod
