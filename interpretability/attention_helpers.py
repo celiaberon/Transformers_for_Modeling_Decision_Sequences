@@ -1,13 +1,11 @@
 """Helper functions for analyzing transformer model components."""
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import torch
-import torch.nn.functional as F
 from activations import EmbeddingAnalyzer
 from analyzer import BaseAnalyzer, BaseVisualizer
 
@@ -64,12 +62,21 @@ class AttentionVisualizer(BaseVisualizer):
             fig, ax = plt.subplots(figsize=(3, 3))
         
         att = att_map[layer_idx][0, head_idx]
-        if np.any(att < 0):  # For diffing attention maps
+        if np.any(att > 1) or np.any(att < 0):
+            cmap='viridis'
+            cbar=True
+            vmin = att.min()
+            vmax = att.max()
+        elif np.any(att < 0):  # For diffing attention maps
             cmap = 'RdBu'
             vmin = -1
+            vmax = 1
+            cbar = False
         else:  # For raw attention map
             cmap = 'viridis'
             vmin = 0
+            vmax = 1
+            cbar = False
             
         sns.heatmap(
             att,
@@ -79,9 +86,9 @@ class AttentionVisualizer(BaseVisualizer):
             xticklabels=list(sequence),
             yticklabels=list(sequence),
             vmin=vmin,
-            vmax=1,
+            vmax=vmax,
             ax=ax,
-            cbar=False,
+            cbar=cbar,
             square=True,
             annot_kws={"size": 8},
             mask=np.triu(np.ones_like(att), k=1),  # Hide upper diagonal
@@ -198,6 +205,219 @@ class AttentionVisualizer(BaseVisualizer):
             fig.subplots_adjust(wspace=0.1)
         return fig
 
+    def plot_attention_features(self, sequences, block_sequences, config, **kwargs):
+        pca = self.analyzer._get_embedding_pca(sequences, config)
+        projections = {'left (U)': [], 'right (V)': []}
+        eigenvalues = []
+        block_sequences = interp.trim_leading_duplicates(block_sequences)
+        for seq in block_sequences:
+            f_proj_left, S, f_proj_right = self.analyzer.project_attention_features(
+                seq, pca, **kwargs)
+            projections['left (U)'].append(f_proj_left)
+            projections['right (V)'].append(f_proj_right)
+            eigenvalues.append(S)
+        # Create figure with subplots for each singular vector
+        n_singular_vectors = len(eigenvalues[0])
+        fig, axs = plt.subplots(
+            nrows=n_singular_vectors, ncols=2,
+            figsize=(8, 3 * n_singular_vectors),
+            sharex='col', sharey='col'
+        )
+        # Plot eigenvalues in first subplot
+        eigenvalues_df = pd.DataFrame(
+            eigenvalues,
+            columns=[f'SV{i+1}' for i in range(n_singular_vectors)]
+        )
+        eigenvalues_df['seq'] = block_sequences
+        eigenvalues_melted = eigenvalues_df.melt(
+            id_vars=['seq'], var_name='SV', value_name='Value'
+        )
+        # Plot each singular vector's projections
+        for sv_idx in range(n_singular_vectors):
+            # Plot left singular vector projections
+            left_projs = []
+            for seq_idx, seq_projs in enumerate(projections['left (U)']):
+                left_projs.append({
+                    'seq': block_sequences[seq_idx],
+                    'PC1': seq_projs[sv_idx][0],
+                    'PC2': seq_projs[sv_idx][1]
+                })
+            left_df = pd.DataFrame(left_projs)
+            sns.scatterplot(
+                data=left_df, x='PC1', y='PC2',
+                hue='seq', palette='magma', ax=axs[sv_idx, 0]
+            )
+            axs[sv_idx, 0].axhline(y=0, color='k', linestyle='--', alpha=0.3)
+            axs[sv_idx, 0].axvline(x=0, color='k', linestyle='--', alpha=0.3)
+            axs[sv_idx, 0].set(
+                title=f'Left (U) - SV{sv_idx+1}',
+                xlabel='PC1' if sv_idx == n_singular_vectors-1 else '',
+                ylabel='PC2'
+            )
+            # Plot right singular vector projections
+            right_projs = []
+            for seq_idx, seq_projs in enumerate(projections['right (V)']):
+                right_projs.append({
+                    'seq': block_sequences[seq_idx],
+                    'PC1': seq_projs[sv_idx][0],
+                    'PC2': seq_projs[sv_idx][1]
+                })
+            right_df = pd.DataFrame(right_projs)
+            sns.scatterplot(
+                data=right_df, x='PC1', y='PC2',
+                hue='seq', palette='magma', ax=axs[sv_idx, 1]
+            )
+            axs[sv_idx, 1].axhline(y=0, color='k', linestyle='--', alpha=0.3)
+            axs[sv_idx, 1].axvline(x=0, color='k', linestyle='--', alpha=0.3)
+            axs[sv_idx, 1].set(
+                title=f'Right (V) - SV{sv_idx+1}',
+                xlabel='PC1' if sv_idx == n_singular_vectors-1 else '',
+                ylabel='PC2'
+            )
+            # Add singular value to title
+            sv_value = eigenvalues[0][sv_idx]
+            axs[sv_idx, 0].set_title(f'Left (U) - SV{sv_idx+1} (σ={sv_value:.2f})')
+            axs[sv_idx, 1].set_title(f'Right (V) - SV{sv_idx+1} (σ={sv_value:.2f})')
+            # Only show legend for last row
+            if sv_idx < n_singular_vectors-1:
+                axs[sv_idx, 0].legend().remove()
+                axs[sv_idx, 1].legend().remove()
+        fig.suptitle("Projection of Attention Features into Embedding Layer PCA Space")
+        plt.tight_layout()
+        return fig
+
+    def plot_attention(
+        self,
+        sequence: str,
+        layer_idx: Optional[int] = None,
+        head_idx: Optional[int] = None,
+        as_diff: bool = False,
+        component: str = 'qk_attn_softmax',
+        **kwargs
+    ) -> Union[plt.Figure, List[plt.Figure]]:
+
+        """Plot attention patterns with flexible granularity.
+        
+        Args:
+            sequence: Input sequence string
+            layer_idx: Optional layer index to analyze
+            head_idx: Optional head index to analyze
+            **kwargs: Additional arguments passed to plotting functions
+            
+        Returns:
+            Matplotlib figure(s) showing attention patterns
+        """
+        attention_maps = self.analyzer.get_attention_maps(sequence, component)
+        probs = self.analyzer.predict_next_token_probs(sequence)
+        next_token = self.analyzer.predict_next_token(sequence, probs)
+
+        if as_diff:
+            attention_maps = self.analyzer.diff_attention_from_reference(
+                attention_maps,
+                **kwargs
+            )
+
+        plot_func = self._get_plot_func(layer_idx, head_idx)
+        fig = plot_func(
+            sequence,
+            attention_maps,
+            layer_idx=layer_idx,
+            head_idx=head_idx,
+            **kwargs
+        )
+        return next_token, probs, fig
+    
+    def plot_attention_multiple_sequences(
+        self,
+        sequences: List[str],
+        max_sequences: int = 5,
+        layer_idx: int = None,
+        head_idx: int = None,
+        component: str = 'qk_attn_softmax',
+        **kwargs
+    ) -> None:
+        """Analyze attention patterns for multiple sequences.
+        
+        Args:
+            sequences: List of sequences to analyze
+            max_sequences: Maximum number of sequences to analyze
+            layer_idx: Optional layer index to analyze
+            head_idx: Optional head index to analyze
+            **kwargs: Additional arguments passed to plotting functions
+        """
+        sequences_to_analyze = sequences[:max_sequences]
+        
+        # Set context for multi-sequence plotting
+        self.plot_context = 'multi_sequence'
+        
+        n_rows = self.analyzer.n_layers
+        n_cols = len(sequences_to_analyze)
+        
+        # Create figure with minimal margins
+        fig = plt.figure(
+            figsize=(3*n_cols, 3*n_rows + 0.3)
+        )  # Add extra height for prob row
+        fig.subplots_adjust(left=0, right=1, top=0.98, bottom=0)
+        
+        # Create subfigures with increased spacing between columns
+        subfigs = fig.subfigures(
+            ncols=n_cols,
+            wspace=0.2,  # Increase spacing between sequence columns
+            hspace=0.0
+        )
+        
+        # Reduce margin factor to prevent overlap
+        margin_factor = np.clip(0.02 * len(sequences_to_analyze), 0.0, 0.2)
+        for i, (subfig, seq) in enumerate(
+            zip(subfigs, sequences_to_analyze)
+        ):
+            self.seq_idx = i
+            # Create subplots within each subfigure with minimal spacing
+            
+            subfig.subplots_adjust(
+                left=0 + margin_factor,  # Slightly reduce left margin
+                right=1 - margin_factor,  # Slightly reduce right margin
+                top=0.98,
+                bottom=0
+            )
+            
+            # Create two subfigures within each subfigure
+            top_subfig, bottom_subfig = subfig.subfigures(
+                2, 1,
+                height_ratios=[
+                    1, 
+                    (n_rows*len(seq)+1)
+                ],  # Make prob row same height as one attention row
+                hspace=0.1
+            )
+            
+            # Plot attention maps in bottom subfigure
+            next_token, probs, bottom_subfig = self.plot_attention(
+                seq, 
+                layer_idx=layer_idx, 
+                head_idx=head_idx,
+                fig=bottom_subfig,
+                component=component,
+                **kwargs
+            )
+            
+            # Plot probability heatmap in top subfigure
+            gs = top_subfig.add_gridspec(1, 4)  # Divide width into 4 parts
+            ax_prob = top_subfig.add_subplot(gs[0, 1:3])
+            self.plot_token_probs(probs, ax=ax_prob)
+            
+            subfig.suptitle(
+                f'{seq} → ({next_token})', 
+                y=1.1, 
+                fontsize=12
+            )
+        
+        # Reset context
+        self.plot_context = None
+        self.seq_idx = None
+        plt.tight_layout(rect=[0, 0, 1, 0.98])
+        return fig
+
 
 class AttentionAnalyzer(BaseAnalyzer):
     """Analyzer for attention patterns in transformer models."""
@@ -208,7 +428,7 @@ class AttentionAnalyzer(BaseAnalyzer):
         self.n_layers = model_config.n_layer
         self.layers = [f'qk_{i}' for i in range(self.n_layers)]
 
-    def get_attention_maps(self, sequence: str) -> List[np.ndarray]:
+    def get_attention_maps(self, sequence: str, component='qk_attn_softmax') -> List[np.ndarray]:
         """Get attention weights for each layer and head."""
         
         T = len(sequence)
@@ -217,14 +437,14 @@ class AttentionAnalyzer(BaseAnalyzer):
             f"{self.model.config.block_size}"
         )
         # Use unified hook system to get QK attention weights
-        qk_components = self.layers
-        qk_states = self._extract_internal_states([sequence], qk_components)
+        components = [f'{component}_{i}' for i in range(self.n_layers)]
+        states = self._extract_internal_states([sequence], components)
         
         # Convert to the expected format: List[np.ndarray] where each array is [1, n_heads, seq_len, seq_len]
         attention_maps = []
         for i in range(self.n_layers):
-            if f'qk_{i}' in qk_states:
-                attention_maps.append(qk_states[f'qk_{i}'])
+            if f'{component}_{i}' in states:
+                attention_maps.append(states[f'{component}_{i}'])
             else:
                 print(f'No attention map found for layer {i}')
 
@@ -311,214 +531,4 @@ class AttentionAnalyzer(BaseAnalyzer):
         pca, _, _ = embed_analyzer.compute_pca_embeddings(sequences, 'embed', config)
         return pca
 
-    def plot_attention_features(self, sequences, block_sequences, config, **kwargs):
-        pca = self._get_embedding_pca(sequences, config)
-        projections = {'left (U)': [], 'right (V)': []}
-        eigenvalues = []
-        block_sequences = interp.trim_leading_duplicates(block_sequences)
-        
-        for seq in block_sequences:
-            f_proj_left, S, f_proj_right = self.project_attention_features(seq, pca, **kwargs)
-            projections['left (U)'].append(f_proj_left)
-            projections['right (V)'].append(f_proj_right)
-            eigenvalues.append(S)
-            
-        # Create figure with subplots for each singular vector
-        n_singular_vectors = len(eigenvalues[0])
-        fig, axs = plt.subplots(nrows=n_singular_vectors, ncols=2, 
-                               figsize=(8, 3*n_singular_vectors),
-                               sharex='col', sharey='col')
-        
-        # Plot eigenvalues in first subplot
-        eigenvalues_df = pd.DataFrame(eigenvalues, 
-                                    columns=[f'SV{i+1}' for i in range(n_singular_vectors)])
-        eigenvalues_df['seq'] = block_sequences
-        eigenvalues_melted = eigenvalues_df.melt(id_vars=['seq'], 
-                                               var_name='SV', 
-                                               value_name='Value')
-        
-        # Plot each singular vector's projections
-        for sv_idx in range(n_singular_vectors):
-            # Plot left singular vector projections
-            left_projs = []
-            for seq_idx, seq_projs in enumerate(projections['left (U)']):
-                left_projs.append({
-                    'seq': block_sequences[seq_idx],
-                    'PC1': seq_projs[sv_idx][0],
-                    'PC2': seq_projs[sv_idx][1]
-                })
-            left_df = pd.DataFrame(left_projs)
-            
-            sns.scatterplot(data=left_df, x='PC1', y='PC2',
-                          hue='seq', palette='magma',
-                          ax=axs[sv_idx, 0])
-            axs[sv_idx, 0].axhline(y=0, color='k', linestyle='--', alpha=0.3)
-            axs[sv_idx, 0].axvline(x=0, color='k', linestyle='--', alpha=0.3)
-            axs[sv_idx, 0].set(title=f'Left (U) - SV{sv_idx+1}',
-                              xlabel='PC1' if sv_idx == n_singular_vectors-1 else '',
-                              ylabel='PC2')
-            
-            # Plot right singular vector projections
-            right_projs = []
-            for seq_idx, seq_projs in enumerate(projections['right (V)']):
-                right_projs.append({
-                    'seq': block_sequences[seq_idx],
-                    'PC1': seq_projs[sv_idx][0],
-                    'PC2': seq_projs[sv_idx][1]
-                })
-            right_df = pd.DataFrame(right_projs)
-            
-            sns.scatterplot(data=right_df, x='PC1', y='PC2',
-                          hue='seq', palette='magma',
-                          ax=axs[sv_idx, 1])
-            axs[sv_idx, 1].axhline(y=0, color='k', linestyle='--', alpha=0.3)
-            axs[sv_idx, 1].axvline(x=0, color='k', linestyle='--', alpha=0.3)
-            axs[sv_idx, 1].set(title=f'Right (V) - SV{sv_idx+1}',
-                              xlabel='PC1' if sv_idx == n_singular_vectors-1 else '',
-                              ylabel='PC2')
-            
-            # Add singular value to title
-            sv_value = eigenvalues[0][sv_idx]
-            axs[sv_idx, 0].set_title(f'Left (U) - SV{sv_idx+1} (σ={sv_value:.2f})')
-            axs[sv_idx, 1].set_title(f'Right (V) - SV{sv_idx+1} (σ={sv_value:.2f})')
-            
-            # Only show legend for last row
-            if sv_idx < n_singular_vectors-1:
-                axs[sv_idx, 0].legend().remove()
-                axs[sv_idx, 1].legend().remove()
-        
-        fig.suptitle("Projection of Attention Features into Embedding Layer PCA Space")
-        plt.tight_layout()
-        return fig
-
-    def plot_attention(
-        self,
-        sequence: str,
-        layer_idx: Optional[int] = None,
-        head_idx: Optional[int] = None,
-        as_diff: bool = False,
-        **kwargs
-    ) -> Union[plt.Figure, List[plt.Figure]]:
-        """Plot attention patterns with flexible granularity.
-        
-        Args:
-            sequence: Input sequence string
-            layer_idx: Optional layer index to analyze
-            head_idx: Optional head index to analyze
-            **kwargs: Additional arguments passed to plotting functions
-            
-        Returns:
-            Matplotlib figure(s) showing attention patterns
-        """
-        
-        attention_maps = self.get_attention_maps(sequence)
-        probs = self.predict_next_token_probs(sequence)
-        
-        next_token = self.predict_next_token(sequence, probs)
-
-        if as_diff:
-            attention_maps = self.diff_attention_from_reference(
-                attention_maps,
-                **kwargs
-            )
-
-        plot_func = self.visualizer._get_plot_func(layer_idx, head_idx)
-        fig = plot_func(
-            sequence,
-            attention_maps,
-            layer_idx=layer_idx,
-            head_idx=head_idx,
-            **kwargs
-        )
-        return next_token, probs, fig
-
-    def plot_attention_multiple_sequences(
-        self,
-        sequences: List[str],
-        max_sequences: int = 5,
-        layer_idx: int = None,
-        head_idx: int = None,
-        **kwargs
-    ) -> None:
-        """Analyze attention patterns for multiple sequences.
-        
-        Args:
-            sequences: List of sequences to analyze
-            max_sequences: Maximum number of sequences to analyze
-            layer_idx: Optional layer index to analyze
-            head_idx: Optional head index to analyze
-            **kwargs: Additional arguments passed to plotting functions
-        """
-        sequences_to_analyze = sequences[:max_sequences]
-        
-        # Set context for multi-sequence plotting
-        self.visualizer.plot_context = 'multi_sequence'
-        
-        n_rows = self.n_layers
-        n_cols = len(sequences_to_analyze)
-        
-        # Create figure with minimal margins
-        fig = plt.figure(
-            figsize=(3*n_cols, 3*n_rows + 0.3)
-        )  # Add extra height for prob row
-        fig.subplots_adjust(left=0, right=1, top=0.98, bottom=0)
-        
-        # Create subfigures with increased spacing between columns
-        subfigs = fig.subfigures(
-            ncols=n_cols,
-            wspace=0.2,  # Increase spacing between sequence columns
-            hspace=0.0
-        )
-        
-        # Reduce margin factor to prevent overlap
-        margin_factor = np.clip(0.02 * len(sequences_to_analyze), 0.0, 0.2)
-        for i, (subfig, seq) in enumerate(
-            zip(subfigs, sequences_to_analyze)
-        ):
-            self.visualizer.seq_idx = i
-            # Create subplots within each subfigure with minimal spacing
-            
-            subfig.subplots_adjust(
-                left=0 + margin_factor,  # Slightly reduce left margin
-                right=1 - margin_factor,  # Slightly reduce right margin
-                top=0.98,
-                bottom=0
-            )
-            
-            # Create two subfigures within each subfigure
-            top_subfig, bottom_subfig = subfig.subfigures(
-                2, 1,
-                height_ratios=[
-                    1, 
-                    (n_rows*len(seq)+1)
-                ],  # Make prob row same height as one attention row
-                hspace=0.1
-            )
-            
-            # Plot attention maps in bottom subfigure
-            next_token, probs, bottom_subfig = self.plot_attention(
-                seq, 
-                layer_idx=layer_idx, 
-                head_idx=head_idx,
-                fig=bottom_subfig,
-                **kwargs
-            )
-            
-            # Plot probability heatmap in top subfigure
-            gs = top_subfig.add_gridspec(1, 4)  # Divide width into 4 parts
-            ax_prob = top_subfig.add_subplot(gs[0, 1:3])
-            self.visualizer.plot_token_probs(probs, ax=ax_prob)
-            
-            subfig.suptitle(
-                f'{seq} → ({next_token})', 
-                y=1.1, 
-                fontsize=12
-            )
-        
-        # Reset context
-        self.visualizer.plot_context = None
-        self.visualizer.seq_idx = None
-        plt.tight_layout(rect=[0, 0, 1, 0.98])
-        return fig
-
-
+    
