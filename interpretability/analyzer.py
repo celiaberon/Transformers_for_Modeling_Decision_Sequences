@@ -1078,13 +1078,15 @@ class BaseAnalyzer(ABC):
                 # Compute QK attention weights
                 qk_attn = torch.matmul(q, k.transpose(-2, -1)) / (C ** 0.5)
                 qk_attn = qk_attn.masked_fill(module.bias[:, :, :T, :T] == 0, float('-inf'))
-                qk_attn = F.softmax(qk_attn, dim=-1)
+                qk_attn_softmax = F.softmax(qk_attn, dim=-1)
                 
                 # Compute OV attention (weighted values)
-                ov_output = torch.matmul(qk_attn, v)
+                ov_output = torch.matmul(qk_attn_softmax, v)
                 
                 # Store based on component type
-                if component_name.startswith('qk_'):
+                if component_name.startswith('qk_attn_softmax'):
+                    activations[component_name].append(qk_attn_softmax.detach().cpu().numpy())
+                elif component_name.startswith('qk_'):
                     activations[component_name].append(qk_attn.detach().cpu().numpy())
                 elif component_name.startswith('ov_'):
                     activations[component_name].append(ov_output.detach().cpu().numpy())
