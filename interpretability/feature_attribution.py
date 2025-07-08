@@ -468,6 +468,56 @@ class AttributionAnalyzer(BaseAnalyzer):
         
         return -model_lime.coef_
 
+    def attribution_umap(
+        self,
+        sequences: list[str],
+        method: str = 'contrastive',
+        n_components: int = 2,
+        umap_kwargs: dict = None,
+        **attribution_kwargs
+    ):
+        """
+        Run UMAP on attribution matrices where each sequence becomes a single vector.
+        For each sequence, concatenate all token-wise attributions into one long vector.
+        
+        Returns:
+            embedding: (n_sequences, n_components) - UMAP embedding of sequences
+            matrix: (n_sequences, context_length * vocab_size) - concatenated attributions
+            sequences: list of input sequences for reference
+        """
+        import umap
+        
+        func = self._get_attribution_function(method)
+        sequence_vectors = []
+        
+        for seq in sequences:
+            # Get attribution matrix for this sequence: (vocab_size, context_length)
+            attributions = []
+            for target_token_idx in range(len(self.vocab)):  # Loop over vocab tokens
+                attribution_scores = func(seq, target_token_idx, **attribution_kwargs)
+                attributions.append(attribution_scores)  # Each is (seq_len,)
+            
+            # Convert to numpy array and flatten: (vocab_size * context_length,)
+            attribution_matrix = np.array(attributions)  # (vocab_size, seq_len)
+            seq_vector = attribution_matrix.flatten()
+            sequence_vectors.append(seq_vector)
+        
+        # Stack all sequence vectors: (n_sequences, context_length * vocab_size)
+        big_matrix = np.stack(sequence_vectors, axis=0)
+        # Run UMAP on the sequence vectors
+        umap_kwargs = umap_kwargs or {}
+        # Add default parameters to handle sparse/problematic matrices
+        umap_kwargs.setdefault('n_neighbors', min(15, len(sequences) - 1))
+        umap_kwargs.setdefault('min_dist', 0.1)
+        umap_kwargs.setdefault('metric', 'euclidean')
+        
+        print(f"Matrix stats - Shape: {big_matrix.shape}, Non-zero: {np.count_nonzero(big_matrix)}, Sparsity: {1 - np.count_nonzero(big_matrix)/big_matrix.size:.3f}")
+        
+        reducer = umap.UMAP(n_components=n_components, **umap_kwargs)
+        embedding = reducer.fit_transform(big_matrix)  # (n_sequences, n_components)
+        
+        return embedding, big_matrix
+
     # def layer_perturbation_analysis(
     #     self,
     #     sequence: str,
