@@ -2,9 +2,9 @@ import os
 import sys
 from dataclasses import dataclass
 from datetime import timedelta
-import torch.distributed as dist
 
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 from torch.nn import functional as F
 
@@ -176,6 +176,7 @@ class GPT(nn.Module):
         if return_residual:
             residual_snapshot = x.clone().detach()
 
+        # Unembedding: hidden @ wte.weight.T → (vocab_size,)
         logits = self.lm_head(self.transformer.ln_f(x))
         loss = self.calculate_loss(logits, targets, **kwargs)
         
