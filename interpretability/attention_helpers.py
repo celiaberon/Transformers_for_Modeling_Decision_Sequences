@@ -8,6 +8,7 @@ import pandas as pd
 import seaborn as sns
 from activations import EmbeddingAnalyzer
 from analyzer import BaseAnalyzer, BaseVisualizer
+from sklearn.decomposition import PCA
 
 import interpretability.interp_helpers as interp
 
@@ -63,8 +64,8 @@ class AttentionVisualizer(BaseVisualizer):
         
         att = att_map[layer_idx][0, head_idx]
         if np.any(att > 1) or np.any(att < 0):
-            cmap='viridis'
-            cbar=True
+            cmap = 'viridis'
+            cbar = True
             vmin = att.min()
             vmax = att.max()
         elif np.any(att < 0):  # For diffing attention maps
@@ -96,7 +97,8 @@ class AttentionVisualizer(BaseVisualizer):
         
         # Only show labels based on context
         if self.plot_context == 'multi_sequence':
-            # In multi-sequence context, only show labels on first sequence and last layer
+            # In multi-sequence context, only show labels on first sequence
+            # and last layer
             if self.seq_idx == 0 and head_idx == 0:  # First sequence
                 ax.set(ylabel='Query (attending)')
             if layer_idx == len(att_map) - 1:  # Last layer
@@ -205,14 +207,19 @@ class AttentionVisualizer(BaseVisualizer):
             fig.subplots_adjust(wspace=0.1)
         return fig
 
-    def plot_attention_features(self, sequences, block_sequences, config, **kwargs):
+    def plot_attention_features(
+        self, sequences, block_sequences, config, **kwargs
+    ):
         pca = self.analyzer._get_embedding_pca(sequences, config)
         projections = {'left (U)': [], 'right (V)': []}
         eigenvalues = []
         block_sequences = interp.trim_leading_duplicates(block_sequences)
         for seq in block_sequences:
-            f_proj_left, S, f_proj_right = self.analyzer.project_attention_features(
-                seq, pca, **kwargs)
+            f_proj_left, S, f_proj_right = (
+                self.analyzer.project_attention_features(
+                    seq, pca, **kwargs
+                )
+            )
             projections['left (U)'].append(f_proj_left)
             projections['right (V)'].append(f_proj_right)
             eigenvalues.append(S)
@@ -276,8 +283,12 @@ class AttentionVisualizer(BaseVisualizer):
             )
             # Add singular value to title
             sv_value = eigenvalues[0][sv_idx]
-            axs[sv_idx, 0].set_title(f'Left (U) - SV{sv_idx+1} (σ={sv_value:.2f})')
-            axs[sv_idx, 1].set_title(f'Right (V) - SV{sv_idx+1} (σ={sv_value:.2f})')
+            axs[sv_idx, 0].set_title(
+                f'Left (U) - SV{sv_idx+1} (σ={sv_value:.2f})'
+            )
+            axs[sv_idx, 1].set_title(
+                f'Right (V) - SV{sv_idx+1} (σ={sv_value:.2f})'
+            )
             # Only show legend for last row
             if sv_idx < n_singular_vectors-1:
                 axs[sv_idx, 0].legend().remove()
@@ -418,6 +429,302 @@ class AttentionVisualizer(BaseVisualizer):
         plt.tight_layout(rect=[0, 0, 1, 0.98])
         return fig
 
+    def _fit_pca_on_states(
+        self,
+        pre_states: List[np.ndarray],
+        post_states: Optional[List[np.ndarray]] = None,
+        n_components: int = 2,
+        last_token_only: bool = False,
+        fit_on_both: bool = False,
+        **kwargs
+    ) -> np.ndarray:
+        """Fit PCA on flattened pre-attention states.
+        
+        Args:
+            pre_states: List of pre-attention states
+            post_states: List of post-attention states (optional)
+            n_components: Number of PCA components
+            last_token_only: Whether to focus on last token only
+            fit_on_both: Whether to fit PCA on both pre and post states collectively
+            
+        Returns:
+            Tuple of (PCA components matrix, flattened data for centering)
+        """
+        if last_token_only:
+            pre_states = [state[-1, :] for state in pre_states]
+            if fit_on_both and post_states is not None:
+                post_states = [state[-1, :] for state in post_states]
+
+        # Flatten all pre-attention states for PCA fitting
+        flattened_pre = np.array([state.flatten() for state in pre_states])
+        
+        if fit_on_both and post_states is not None:
+            # Also include post-states in PCA fitting
+            flattened_post = np.array([state.flatten() for state in post_states])
+            # Combine pre and post states for PCA fitting
+            flattened_combined = np.vstack([flattened_pre, flattened_post])
+            
+            pca = PCA(n_components=n_components)
+            pca.fit(flattened_combined)
+            
+            # Return pre-states mean for consistency with projection
+            return pca.components_, flattened_combined
+        else:
+            # Original behavior: fit only on pre-states
+            pca = PCA(n_components=n_components)
+            pca.fit(flattened_pre)
+            return pca.components_, flattened_pre
+
+    def _compute_attention_motion(
+        self,
+        sequences: List[str],
+        layer_idx: int,
+        pre_component: Optional[str] = None,
+        post_component: Optional[str] = None,
+    ) -> List[np.ndarray]:
+        """Compute attention-based motion for each sequence.
+        
+        This method extracts the residual stream states directly before and 
+        after attention to get the exact motion caused by the attention mechanism.
+        
+        Args:
+            sequences: List of input sequences
+            layer_idx: Layer index to analyze
+            pre_component: Component to use for pre-state (if None, uses default)
+            post_component: Component to use for post-state (if None, uses default)
+            
+        Returns:
+            List of (pre_attention_state, post_attention_state) tuples
+        """
+        motion_vectors = []
+        
+        # Default component selection
+        if pre_component is None:
+            pre_component = f'layer_{layer_idx-1}' if layer_idx > 0 else 'embed'
+        if post_component is None:
+            post_component = f'attn_{layer_idx}'
+        
+        for seq in sequences:
+            # Extract residual stream states before and after attention
+            states = self.analyzer._extract_internal_states([seq], [pre_component, post_component])
+            
+            # Get pre and post attention residual stream states
+            R_pre = states[pre_component][0]  # (seq_len, d_model)
+            R_post = states[post_component][0]  # (seq_len, d_model)
+            
+            motion_vectors.append((R_pre, R_post))
+        
+        return motion_vectors
+
+    def _project_motion_to_pca(
+        self,
+        motion_vectors: List[tuple],
+        pca_components: np.ndarray,
+        pca_mean: np.ndarray,
+        last_token_only: bool = False
+    ) -> np.ndarray:
+        """Project motion vectors to PCA space.
+        
+        Args:
+            motion_vectors: List of (pre_state, post_state) tuples
+            pca_components: PCA components matrix
+            pca_mean: Mean of PCA training data
+            last_token_only: Whether to focus on last token only
+            
+        Returns:
+            Array of shape (N, 4) with [pre_x, pre_y, post_x, post_y] for each sequence
+        """
+        arrows = []
+        
+        for R_pre, R_post in motion_vectors:
+            if last_token_only:
+                # Focus only on the last token
+                pre_flat = R_pre[-1, :]  # (d_model,)
+                post_flat = R_post[-1, :]  # (d_model,)
+            else:
+                # Use entire sequence (flattened)
+                pre_flat = R_pre.flatten()  # (seq_len * d_model,)
+                post_flat = R_post.flatten()  # (seq_len * d_model,)
+            
+            # Center and project
+            pre_xy = (pre_flat - pca_mean) @ pca_components.T
+            post_xy = (post_flat - pca_mean) @ pca_components.T
+            
+            arrows.append([*pre_xy, *post_xy])
+        
+        return np.array(arrows)
+
+    def _plot_pca_motion(
+        self,
+        arrows: np.ndarray,
+        sequences: List[str],
+        pre_component: str,
+        post_component: str,
+        ax: plt.Axes,
+        sub_sample: Optional[int] = None,
+        last_token_only: bool = False,
+        **kwargs
+    ) -> None:
+        """Plot the motion visualization in PCA space.
+        
+        Args:
+            arrows: Array of shape (N, 4) with motion vectors
+            sequences: List of input sequences
+            pre_component: Name of pre-state component
+            post_component: Name of post-state component
+            ax: Matplotlib axes to plot on
+            sub_sample: Optional subsampling factor
+            last_token_only: Whether to focus on last token only
+        """
+        # Plot starting points
+        ax.scatter(
+            arrows[:, 0], arrows[:, 1], 
+            alpha=0.6,
+            label="Pre-state",
+            s=20
+        )
+
+        # Sub-sample arrows and labels (but keep them matched)
+        if sub_sample is not None:
+            idcs = np.random.choice(len(sequences), sub_sample, replace=False)
+            arrows_sub = arrows[idcs, :]
+            sequences_sub = [sequences[i] for i in idcs]
+        else:
+            arrows_sub = arrows
+            sequences_sub = sequences
+
+        # Plot motion arrows (subsampled)
+        ax.quiver(
+            arrows_sub[:, 0], arrows_sub[:, 1],
+            arrows_sub[:, 2] - arrows_sub[:, 0], arrows_sub[:, 3] - arrows_sub[:, 1],
+            angles='xy', scale_units='xy', scale=1, 
+            alpha=0.7, width=0.003
+        )
+        
+        # Add sequence labels (subsampled, matching arrows)
+        for i, seq in enumerate(sequences_sub):
+            if last_token_only:
+                x = arrows_sub[i, 2]
+                y = arrows_sub[i, 3]
+            else:
+                x = arrows_sub[i, 0]
+                y = arrows_sub[i, 1]
+            ax.annotate(
+                seq,
+                (x, y),
+                xytext=(5, 5), textcoords='offset points',
+                fontsize=10, alpha=0.8
+            )
+        
+        # Set axis limits to encompass all arrow start and end points
+        all_x = np.concatenate([arrows[:, 0], arrows_sub[:, 2]])
+        all_y = np.concatenate([arrows[:, 1], arrows_sub[:, 3]])
+        
+        # Add some padding (5% of the range)
+        x_range = all_x.max() - all_x.min()
+        y_range = all_y.max() - all_y.min()
+        padding_x = x_range * 0.05
+        padding_y = y_range * 0.05
+
+        ax.set(
+            xlabel="PC1",
+            ylabel="PC2",
+            title=f"Motion of sequences in PCA plane\n"
+                  f"({pre_component} → {post_component})",
+            xlim=(all_x.min() - padding_x, all_x.max() + padding_x),
+            ylim=(all_y.min() - padding_y, all_y.max() + padding_y)
+        )
+        ax.legend()
+        sns.despine()
+        return ax
+
+    def plot_attention_motion_in_pca(
+        self,
+        sequences: List[str],
+        layer_idx: int = 0,
+        pre_component: Optional[str] = None,
+        post_component: Optional[str] = None,
+        last_token_only: bool = False,
+        fit_on_both: bool = False,
+        ax: Optional[plt.Axes] = None,
+        **kwargs
+    ) -> plt.Figure:
+        """Plot how attention updates move sequences through PCA embedding space.
+        
+        This visualization shows the motion of sequences in the PCA plane when
+        attention updates the residual stream. Each arrow shows the movement from
+        pre-attention to post-attention state using exact model computations.
+        
+        Args:
+            sequences: List of sequences to analyze
+            layer_idx: Layer index to analyze (used for default component selection)
+            pre_component: Component for pre-state (e.g., 'embed', 'layer_0_pre_attn')
+            post_component: Component for post-state (e.g., 'attn_0', 'layer_0_post_attn')
+            last_token_only: Whether to focus PCA on last token only
+            fit_on_both: Whether to fit PCA on both pre and post states collectively
+            ax: Optional axes to plot on
+            **kwargs: Additional plotting arguments
+            
+        Returns:
+            Figure with the motion visualization
+            
+        Examples:
+            # Default: layer-to-layer motion
+            plot_attention_motion_in_pca(sequences, layer_idx=1)
+            
+            # Embed to post-attention
+            plot_attention_motion_in_pca(sequences, pre_component='embed', post_component='attn_0')
+            
+            # Within-attention motion
+            plot_attention_motion_in_pca(sequences, pre_component='layer_0_pre_attn', post_component='layer_0_post_attn')
+            
+            # Focus on last token only
+            plot_attention_motion_in_pca(sequences, last_token_only=True)
+            
+            # Fit PCA on both pre and post states for better motion visualization
+            plot_attention_motion_in_pca(sequences, fit_on_both=True)
+        """
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(6, 4))
+        else:
+            fig = ax.figure
+        
+        # Step 1: Extract pre and post states directly from model
+        motion_vectors = self._compute_attention_motion(
+            sequences, layer_idx, pre_component, post_component
+        )
+        
+        # Get actual component names for plotting
+        actual_pre = pre_component or (f'layer_{layer_idx-1}' if layer_idx > 0 else 'embed')
+        actual_post = post_component or f'attn_{layer_idx}'
+        
+        # Step 2: Fit PCA on pre-attention states (and optionally post-states)
+        pre_states = [R_pre for R_pre, _ in motion_vectors]
+        post_states = [R_post for _, R_post in motion_vectors] if fit_on_both else None
+        
+        pca_components, flattened_data = self._fit_pca_on_states(
+            pre_states, 
+            post_states=post_states,
+            last_token_only=last_token_only, 
+            fit_on_both=fit_on_both,
+            **kwargs
+        )
+        
+        # Step 3: Project motion to PCA space
+        arrows = self._project_motion_to_pca(
+            motion_vectors, pca_components, flattened_data.mean(0),
+            last_token_only
+        )
+        
+        # Step 4: Plot the results
+        self._plot_pca_motion(
+            arrows, sequences, actual_pre, actual_post, ax,
+            last_token_only=last_token_only, **kwargs
+        )
+        
+        plt.tight_layout()
+        return fig
+
 
 class AttentionAnalyzer(BaseAnalyzer):
     """Analyzer for attention patterns in transformer models."""
@@ -482,6 +789,7 @@ class AttentionAnalyzer(BaseAnalyzer):
         layer_idx: int = 0,
         head_idx: int = 0,
         nth_feature: int = 0,
+        component: str = 'qk_attn_softmax',
         **kwargs
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Factorize attention patterns using SVD.
@@ -496,13 +804,26 @@ class AttentionAnalyzer(BaseAnalyzer):
             Tuple of (left features, right features) in PCA space
         """
         # Calculate A = QKT
-        A = self.get_attention_maps(sequence)[layer_idx][0, head_idx]
+        A = self.get_attention_maps(sequence, component)[layer_idx][0, head_idx]
         X = self.get_embeddings(sequence, flatten=False)
+
+        # Set upper diagonal (future tokens) to 0 (causal mask)
+        seq_len = A.shape[0]
+        mask = np.triu(np.ones((seq_len, seq_len)), k=1)
+        A = A.copy()  # Don't modify original
+        A[mask == 1] = 0.0
+        
+        # Center and scale each row
+        row_max = A.max(axis=-1, keepdims=True)
+        A_center = A - row_max  # like softmax does
+        row_std = A_center.std(axis=-1, keepdims=True)
+        row_std = np.maximum(row_std, 1e-4)  # clamp_min equivalent
+        A_norm = A_center / row_std
         
         # SVD(A) = USVT
-        U, S, V = np.linalg.svd(A)
+        U, S, V = np.linalg.svd(A_norm)
         features_left = X.T @ U[:, nth_feature]
-        features_right = X.T @ V[:, nth_feature] 
+        features_right = X.T @ V[nth_feature, :] 
         
         return features_left, S, features_right
 
