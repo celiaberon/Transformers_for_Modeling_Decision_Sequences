@@ -10,9 +10,9 @@ CONTEXT_LENGTH_ARRAY=(6)
 EMBD_DIM_ARRAY=(4)
 BATCH_SIZE_ARRAY=(256)
 DOMAIN_CONFIG_ARRAY=("three_domains.ini")
-DOMAIN_ID_ARRAY=("A" "B" "C" "B_not_sticky")
+DOMAIN_ID_ARRAY=("A" "B") # "C" "B_not_sticky")
 EXPERIMENT_TYPE="basic"  # define the experiment you are running
-USE_STANDARD_DATASET=false  # Standard dataset flag - when true, uses a shared dataset for all runs
+USE_STANDARD_DATASET=true  # Standard dataset flag - when true, uses a shared dataset for all runs
 
 # Options are:
 #   "basic": run_experiment.sh

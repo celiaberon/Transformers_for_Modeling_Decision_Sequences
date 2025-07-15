@@ -58,7 +58,7 @@ else
         --num_steps_train=$TRAIN_STEPS \
         --num_steps_val=1_000_000 \
         --no_overwrite \
-        --config_file "$DOMAIN_CONFIG" \
+        --config_file "$DOMAIN_CONFIG"
 fi
 python ${BASE_PATH}/evaluation/basic_evaluation.py --run $RUN_NUMBER
 python ${BASE_PATH}/evaluation/graphs_on_trial_block_transitions.py --run $RUN_NUMBER
