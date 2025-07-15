@@ -12,7 +12,14 @@ def get_latest_run():
         int: Highest run number, or 0 if no runs exist
     """
     base_path = os.path.dirname(os.path.dirname(__file__))
-    run_dirs = glob.glob(os.path.join(base_path, "experiments", "run_*"))
+    
+    # Check if we're in a comparison context
+    comparison_dir = os.environ.get('COMPARISON_DIR')
+    if comparison_dir:
+        run_dirs = glob.glob(os.path.join(comparison_dir, "run_*"))
+    else:
+        run_dirs = glob.glob(os.path.join(base_path, "experiments", "run_*"))
+        
     if not run_dirs:
         return 0  # if no runs, return 0 so first run is 1
     return max([int(d.split('_')[-1]) for d in run_dirs])
@@ -31,7 +38,13 @@ def get_run_dir(run=None):
     base_path = os.path.dirname(os.path.dirname(__file__))
     if run is None:
         run = get_latest_run()
-    return os.path.join(base_path, "experiments", f"run_{run}")
+    
+    # Check if we're in a comparison context
+    comparison_dir = os.environ.get('COMPARISON_DIR')
+    if comparison_dir:
+        return os.path.join(comparison_dir, f"run_{run}")
+    else:
+        return os.path.join(base_path, "experiments", f"run_{run}")
 
 
 def ensure_run_dir(run, overwrite=True, subdir=None):
@@ -90,13 +103,25 @@ def get_experiment_file(filename_template, run=None, suffix='tr', subdir=None):
     if run is None:
         run = get_latest_run()
     
-    run_dir = get_run_dir(run)
-    if subdir:
-        run_dir = os.path.join(run_dir, subdir)
+    # Check if we should use standard dataset
+    use_standard = os.environ.get('USE_STANDARD_DATASET', 'false').lower() == 'true'
+    standard_dataset_dir = os.environ.get('STANDARD_DATASET_DIR')
+    dataset_identifier = os.environ.get('DATASET_IDENTIFIER', 'default')
     
-    os.makedirs(run_dir, exist_ok=True)  # Ensure the subdirectory exists
-    filename = filename_template.format(f"{run}{suffix}")
-    return os.path.join(run_dir, filename)
+    if use_standard and standard_dataset_dir and subdir == 'seqs':
+        # Use standard dataset directory for sequence files
+        target_dir = os.path.join(standard_dataset_dir, subdir or '')
+        filename = filename_template.format(f"{dataset_identifier}_{suffix}")
+    else:
+        # Use regular run directory
+        run_dir = get_run_dir(run)
+        if subdir:
+            run_dir = os.path.join(run_dir, subdir)
+        target_dir = run_dir
+        filename = filename_template.format(f"{run}{suffix}")
+    
+    os.makedirs(target_dir, exist_ok=True)  # Ensure the directory exists
+    return os.path.join(target_dir, filename)
 
 
 def format_tokens(tokens):

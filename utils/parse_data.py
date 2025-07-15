@@ -438,8 +438,8 @@ def load_predictions(run, model_name, suffix='v'):
     files = get_data_filenames(run, suffix=suffix)
     gt_events = parse_simulated_data(*files)
 
-    predictions_filename = fm.get_experiment_file(f"pred_{model_name}.txt", run, subdir='seqs')
-    indices_filename = fm.get_experiment_file(f"pred_indices_{model_name}.txt", run, subdir='seqs')
+    predictions_filename = fm.get_experiment_file(f"pred_{model_name}.txt", run, subdir='preds')
+    indices_filename = fm.get_experiment_file(f"pred_indices_{model_name}.txt", run, subdir='preds')
     assert fm.check_files_exist(predictions_filename)
 
     predictions = fm.read_sequence(predictions_filename)
