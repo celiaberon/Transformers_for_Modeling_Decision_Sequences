@@ -104,14 +104,24 @@ def get_experiment_file(filename_template, run=None, suffix='tr', subdir=None):
         run = get_latest_run()
     
     # Check if we should use standard dataset
-    use_standard = os.environ.get('USE_STANDARD_DATASET', 'false').lower() == 'true'
+    use_standard = (os.environ.get('USE_STANDARD_DATASET', 'false').lower()
+                    == 'true')
     standard_dataset_dir = os.environ.get('STANDARD_DATASET_DIR')
     dataset_identifier = os.environ.get('DATASET_IDENTIFIER', 'default')
     
     if use_standard and standard_dataset_dir and subdir == 'seqs':
         # Use standard dataset directory for sequence files
         target_dir = os.path.join(standard_dataset_dir, subdir or '')
-        filename = filename_template.format(f"{dataset_identifier}_{suffix}")
+        
+        # Transform the filename template to use dataset identifier instead of 
+        # run number e.g., 'behavior_run_{}.txt' -> 'behavior_{}_tr.txt'
+        if 'run_{}' in filename_template:
+            # Replace 'run_{}' with '{}' and append suffix
+            base_template = filename_template.replace('run_{}', '{}')
+            filename = base_template.format(f"{dataset_identifier}_{suffix}")
+        else:
+            # Fallback for other templates
+            filename = filename_template.format(f"{dataset_identifier}_{suffix}")
     else:
         # Use regular run directory
         run_dir = get_run_dir(run)
