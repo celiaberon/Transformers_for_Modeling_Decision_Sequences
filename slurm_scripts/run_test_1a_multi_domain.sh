@@ -74,7 +74,7 @@ setup_distributed_environment
 start_time=$(date +%s)
 
 # Launch distributed training with srun
-srun --cpu-bind=none python ${BASE_PATH}/transformer/train.py \
+srun --cpu-bind=none python -m transformer.train \
     --n_layer=$N_LAYER \
     --n_head=$N_HEAD \
     --n_embd=$EMBD_DIM \

@@ -176,58 +176,6 @@ def format_tokens(tokens):
     return f"{int(tokens)}{suffixes[index]}"
 
 
-def parse_model_info(run=None, model_name=None):
-    """
-    Parse model information from metadata.txt
-    
-    Args:
-        run (int, optional): Run number. If None, uses the latest run.
-        model_name (str, optional): Filter for specific model name
-        
-    Returns:
-        dict: Dictionary containing parsed model information
-    """
-    metadata_file = get_experiment_file("metadata.txt", run)
-    model_info = {
-        'model_name': None,
-        'tokens_seen': None,
-        'dataloader': {},
-        'config': {}
-    }
-    if model_name is not None:
-        model_name = model_name.split('_cp')[0]
-    found_model_name = False
-    with open(metadata_file, 'r') as f:
-        current_section = None
-        for line in f:
-            line = line.strip()
-            if not line: continue
-            
-            if line.startswith("Model name:"):
-                if found_model_name:
-                    return model_info  # early return if we don't want to move onto the next model
-                model_info['model_name'] = line.split(": ")[1]
-                if line.split(": ")[1] == model_name:
-                    found_model_name = True
-            elif line.startswith("Tokens seen:"):
-                model_info['tokens_seen'] = int(line.split(": ")[1].replace(',', ''))
-            elif line.startswith("Dataloader parameters:"):
-                current_section = 'dataloader'
-            elif line.startswith("GPTConfig parameters:"):
-                current_section = 'config'
-            elif current_section and ":" in line:
-                key, value = line.split(":", 1)
-                key = key.strip()
-                value = value.strip()
-                try:
-                    value = int(value)
-                except ValueError:
-                    pass
-                model_info[current_section][key] = value
-    
-    return model_info
-
-
 def get_domain_params(run=None, domain_id=None, suffix='tr'):
     """
     Get the parameters for a specific domain.
@@ -270,20 +218,6 @@ def get_domain_params(run=None, domain_id=None, suffix='tr'):
                     current_section = 'agent_params'
                 
     return None
-
-
-def get_latest_model_name(run=None):
-    """
-    Get the name of the latest model based on tokens seen.
-    
-    Args:
-        run (int, optional): Run number. If None, uses the latest run.
-        
-    Returns:
-        str: Latest model name
-    """
-    model_info = parse_model_info(run)
-    return model_info['model_name']
 
 
 def read_sequence(file_name):
@@ -462,3 +396,32 @@ def setup_logging(run_number, component_name, module_name=None):
     # Add SLURM job ID to logger's context  
     logger = FormattedLogger(logger, {'job_id': job_id})
     return logger
+
+
+def setup_project_path():
+    """
+    Add the project root to the Python path if not already present.
+    This ensures imports work correctly regardless of where the script is called from.
+    """
+    # Get the directory containing this file (utils/)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # Get the parent directory (project root)
+    project_root = os.path.dirname(current_dir)
+    
+    # Add to path if not already present
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    print(sys.path)
+    return project_root
+
+
+def get_project_root():
+    """
+    Get the project root directory.
+    
+    Returns:
+        str: Path to the project root directory
+    """
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.dirname(current_dir) 

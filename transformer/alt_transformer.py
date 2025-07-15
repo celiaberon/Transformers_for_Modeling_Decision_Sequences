@@ -8,10 +8,12 @@ import torch.distributed as dist
 import torch.nn as nn
 from torch.nn import functional as F
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from transformer.transformer import GPT, MLP, Block, CausalSelfAttention
+# sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.file_management import setup_project_path
+# setup_project_path()
+from transformer import GPT, MLP, Block, CausalSelfAttention
 
-# Set random seed for reproducibility
+
 seed = 200
 torch.manual_seed(seed)
 if torch.cuda.is_available():

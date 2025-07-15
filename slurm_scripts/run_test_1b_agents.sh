@@ -73,7 +73,7 @@ print_section_header "Model Training"
 start_time=$(date +%s)
 
 # Run training directly 
-python ${BASE_PATH}/transformer/train.py \
+python -m transformer.train \
     --n_layer=$N_LAYER \
     --n_head=$N_HEAD \
     --n_embd=$EMBD_DIM \

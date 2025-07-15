@@ -12,14 +12,16 @@ import numpy as np
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
-# import wandb commented out for now because of permission errors
+
 from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from transformer import GPT, DataLoader, DDPConfig, GPTConfig
+from alt_transformer import GPT_noLN
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import utils.file_management as fm
+from utils.model_utils import select_model, save_model
 
 logger = None
 
@@ -54,6 +56,7 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=256, help='Batch size for training')
     parser.add_argument('--choice_only', action='store_true', default=False,
                         help='Optimize for choice prediction only (exclude rewards)')
+    parser.add_argument('--model_type', type=str, default='GPT', help='Model type')
 
     args = parser.parse_args()
 
@@ -90,7 +93,7 @@ def write_predictions(model_name, predictions, last_step=False):
     if last_step:
         logger.info(f"Sampled validation predictions saved to {pred_file}")
 
-def write_metadata(model, model_name, total_batch_size, max_steps, train_loader, val_loader, config):
+def write_metadata(model, model_name, total_batch_size, max_steps, train_loader, val_loader, config, model_type=None):
     """Write model and training metadata to file."""
     metadata_file = fm.get_experiment_file("metadata.txt", run_number)
     tokens_trained_on = total_batch_size * max_steps
@@ -98,6 +101,7 @@ def write_metadata(model, model_name, total_batch_size, max_steps, train_loader,
     with open(metadata_file, 'a') as f:
         f.write(f"\nModel name: {model_name}\n")
         f.write(f"  Num Parameters: {sum(p.numel() for p in model.parameters())}\n")
+        f.write(f"  Model type: {model_type or 'GPT'}\n")
         f.write(f"\nTokens seen: {tokens_trained_on:,}\n")
         f.write(f"\nTotal batch size: {total_batch_size:,}\n")
         f.write(f"\nMax steps: {max_steps:,}\n")
@@ -121,7 +125,6 @@ def write_experiment_summary(args, model, model_name, val_loss_steps, max_steps)
     """Write experiment summary to CSV for tracking and analysis."""
     import pandas as pd
 
-    # Skip writing if in debug mode
     debug_mode = os.environ.get('DEBUG_MODE', 'false').lower() == 'true'
     if debug_mode:
         logger.info("DEBUG_MODE is enabled - skipping model summary write")
@@ -181,6 +184,7 @@ def write_experiment_summary(args, model, model_name, val_loss_steps, max_steps)
         'experiment_type': experiment_type,
         'domain_config': os.environ.get('DOMAIN_CONFIG', None),
         'domain_id': domain_id,
+        'model_type': args.model_type,
         'num_samples': model_name[len("model_seen"):],
         'num_parameters': sum(p.numel() for p in model.parameters()),
         'max_steps': max_steps,
@@ -192,34 +196,6 @@ def write_experiment_summary(args, model, model_name, val_loss_steps, max_steps)
     logger.info(f"Experiment summary:\n{summary}")
     df = pd.DataFrame(summary, index=[0])
     _save_summary(df, path_to_file)
-
-def save_model(model, model_name, run_number, *, is_checkpoint=False, step=None, compile=False, **kwargs):
-    """Save model weights or checkpoint."""
-    suffix = f"_cp{step}" if is_checkpoint else ""
-    model_path = fm.get_experiment_file(f'{model_name}{suffix}.pth', run_number, subdir='models')
-    logger.info("Saving model at: %s", model_path)
-    
-    # Get state dict based on model type
-    if isinstance(model, DDP):
-        state_dict = model.module.state_dict()
-    elif compile:
-        state_dict = model._orig_mod.state_dict()
-    else:
-        state_dict = model.state_dict()
-    
-    # Save checkpoint or just weights
-    if is_checkpoint:
-        checkpoint = {
-            'model_state_dict': state_dict,
-            'optimizer_state_dict': kwargs.get('optimizer').state_dict(),
-            'step': step,
-            'best_val_loss': kwargs.get('best_val_loss'),
-            'loss_steps': kwargs.get('loss_steps'),
-            'val_loss_steps': kwargs.get('val_loss_steps'),
-        }
-        torch.save(checkpoint, model_path)
-    else:
-        torch.save(state_dict, model_path)
 
 def plot_losses(loss_steps, val_loss_steps, max_steps, eval_interval, model_name):
     """Plot training and validation loss curves."""
@@ -363,7 +339,6 @@ def update_predictions_file(model_name, starting_step):
     """Update predictions file to remove predictions after starting_step."""
     pred_file = fm.get_experiment_file(f"learning_{model_name}_val_preds.txt", run_number, subdir='preds')
 
-    # Check if file exists
     if not os.path.exists(pred_file):
         logger.info(f"Predictions file {pred_file} does not exist. No updates needed.")
         return None
@@ -442,7 +417,7 @@ def steps_per_checkpoint(checkpoint_interval, batches_per_epoch, grad_accum_step
 
 def main():    
     """Main training function."""
-    # Initialize environment
+
     seed = 200
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -462,7 +437,6 @@ def main():
     if ddp.master_process:
         print(f"DDP setup: rank={ddp.rank}, local_rank={ddp.local_rank}, world_size={ddp.world_size}")
     
-    # Initialize logger
     global run_number
     run_number = args.run_number or fm.get_latest_run()
     initialize_logger(run_number, is_master_process=ddp.master_process)
@@ -513,7 +487,8 @@ def main():
         logger.info(f"Gradient accumulation steps: {grad_accum_steps}")
         logger.info(f"Total training steps: {max_steps}")
 
-    model = GPT(GPTConfig(
+    GPT_model = select_model(args.model_type)
+    model = GPT_model(GPTConfig(
         vocab_size=4, block_size=T, n_layer=args.n_layer,
         n_head=args.n_head, n_embd=args.n_embd, device=ddp.device
     ))
@@ -553,7 +528,6 @@ def main():
         update_predictions_file(model_name, starting_step)
         model.to(ddp.device)
     else:
-        # Initialize training from scratch
         best_val_loss = float('inf')
         val_loss = None
         loss_steps = []
@@ -709,8 +683,7 @@ def main():
         # Checkpointing
         if (step % next_checkpoint_step == 0) and ddp.master_process:
             logger.info(f"Checkpoint at step {step} (dataloader pos: {train_loader.current_position})")
-            
-            # Check if validation loss improved
+
             if loss_improved:= (val_loss_value < best_val_loss):
                 best_val_loss = val_loss_value
                 
@@ -718,7 +691,7 @@ def main():
             save_model(
                 model, model_name, run_number, is_checkpoint=True, compile=args.compile,
                 step=step, optimizer=optimizer, best_val_loss=best_val_loss, 
-                loss_steps=loss_steps, val_loss_steps=val_loss_steps
+                loss_steps=loss_steps, val_loss_steps=val_loss_steps, logger=logger
             )
             logger.info(f"Checkpoint saved. Best val loss: {best_val_loss:.4f} (improved: {loss_improved})")
 
@@ -741,8 +714,8 @@ def main():
     if ddp.master_process:
         if ddp.ddp:
             model = model.module
-        save_model(model, model_name, run_number, compile=args.compile)
-        write_metadata(model, model_name, total_batch_size, max_steps, train_loader, val_loader, model.config)
+        save_model(model, model_name, run_number, compile=args.compile, logger=logger)
+        write_metadata(model, model_name, total_batch_size, max_steps, train_loader, val_loader, model.config, args.model_type)
         plot_losses(loss_steps, val_loss_steps, max_steps, args.eval_interval, model_name)
         write_experiment_summary(args, model, model_name, val_loss_steps, max_steps)
         logger.info(f"Training completed. Final model saved as {model_name}")

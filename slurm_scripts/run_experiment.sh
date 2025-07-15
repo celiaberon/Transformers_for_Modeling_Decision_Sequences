@@ -7,7 +7,7 @@
 #SBATCH --gres=gpu:1          
 #SBATCH --cpus-per-task=16
 #SBATCH --time=01:00:00  
-#SBATCH --mem=150GB
+#SBATCH --mem=100GB
 #SBATCH --partition=kempner_requeue
 
 # Source common functions
@@ -17,10 +17,7 @@ source "./slurm_scripts/common_functions.sh"
 setup_environment
 
 # Accept parameters from master runner
-echo "DEBUG: run_experiment.sh called with first argument: '$1'"
-echo "DEBUG: EXPERIMENT_TYPE at start: '$EXPERIMENT_TYPE'"
 RUN_NUMBER=${1:-$(get_next_run)}
-echo "DEBUG: Final RUN_NUMBER in run_experiment.sh: $RUN_NUMBER"
 N_LAYER=${2:-4}
 N_HEAD=${3:-4}
 EPOCHS=${4:-100}
@@ -74,7 +71,7 @@ fi
 setup_distributed_environment
 
 print_section_header "Model Training"
-srun --cpu-bind=none python ${BASE_PATH}/transformer/train.py \
+srun --cpu-bind=none python -m transformer.train \
     --epochs=$EPOCHS \
     --run $RUN_NUMBER \
     --batch_size=$BATCH_SIZE \

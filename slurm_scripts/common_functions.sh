@@ -7,6 +7,9 @@ setup_environment() {
     BASE_PATH="."  # Current directory
     INFERENCE_PATH="${BASE_PATH}/transformer/inference"
     
+    # Set Python path for imports
+    export PYTHONPATH="${BASE_PATH}:$PYTHONPATH"
+    
     # Load modules
     module load python/3.12.5-fasrc01
     module load cuda/12.2.0-fasrc01
@@ -25,12 +28,12 @@ setup_environment() {
 get_next_run() {
     # Check if we're in a comparison directory context
     if [ -n "$COMPARISON_DIR" ]; then
-        local latest=$(ls -d ${COMPARISON_DIR}/run_* 2>/dev/null | sort -t_ -k2 -n | tail -n1 | sed 's/.*run_//')
+        local latest=$(ls -d ${COMPARISON_DIR}/run_* 2>/dev/null | sort -V | tail -n1 | sed 's/.*run_//')
     else
         # Use experiment type to determine directory
         local experiment_type=${EXPERIMENT_TYPE:-basic}
         local search_dir="${BASE_PATH}/experiments/${experiment_type}"
-        local latest=$(ls -d ${search_dir}/run_* 2>/dev/null | sort -t_ -k2 -n | tail -n1 | sed 's/.*run_//')
+        local latest=$(ls -d ${search_dir}/run_* 2>/dev/null | sort -V | tail -n1 | sed 's/.*run_//')
     fi
     if [ -z "$latest" ]; then
         echo 1
@@ -497,7 +500,7 @@ process_checkpoints() {
         # Run the processing commands in sequence for this checkpoint on the assigned GPU
         (
             # These must run in sequence for each checkpoint
-            CUDA_VISIBLE_DEVICES=$gpu_id python ${INFERENCE_PATH}/guess_using_transformer.py --run $RUN_NUMBER --model_name $model_name
+            CUDA_VISIBLE_DEVICES=$gpu_id python -m transformer.inference.guess_using_transformer --run $RUN_NUMBER --model_name $model_name
             # CUDA_VISIBLE_DEVICES=$gpu_id python ${INFERENCE_PATH}/evaluate_transformer_guess.py --run $RUN_NUMBER --model_name $model_name
             # CUDA_VISIBLE_DEVICES=$gpu_id python ${INFERENCE_PATH}/graphs_transformer_vs_ground_truth.py --run $RUN_NUMBER --model_name $model_name
         ) &

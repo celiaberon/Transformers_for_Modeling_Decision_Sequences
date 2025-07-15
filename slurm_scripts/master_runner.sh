@@ -10,11 +10,11 @@ CONTEXT_LENGTH_ARRAY=(6)
 EMBD_DIM_ARRAY=(4)
 BATCH_SIZE_ARRAY=(256)
 DOMAIN_CONFIG_ARRAY=("three_domains.ini")
-DOMAIN_ID_ARRAY=("A" "B") # "C" "B_not_sticky")
-EXPERIMENT_TYPE="basic"  # define the experiment you are running
+DOMAIN_ID_ARRAY=("A") # "B" "C" "B_not_sticky")
+EXPERIMENT_TYPE="layer_norm"  # define the experiment you are running
 export EXPERIMENT_TYPE  # Export immediately so it's available to all functions
 USE_STANDARD_DATASET=true  # Standard dataset flag - when true, uses a shared dataset for all runs
-DEBUG_MODE=false  # Debug mode flag - when true, prevents writing to model_summary.csv
+DEBUG_MODE=true  # Debug mode flag - when true, prevents writing to model_summary.csv
 
 # Options are:
 #   "basic": run_experiment.sh
@@ -22,6 +22,7 @@ DEBUG_MODE=false  # Debug mode flag - when true, prevents writing to model_summa
 #   "agents_test": run_test_1b_agents.sh
 #   "environment_test": run_test_1c_environments.sh
 #   "comparison": model_comparison.sh
+#   "layer_norm": run_layer_norm.sh
 
 TRACKER_FILE="experiments/${EXPERIMENT_TYPE}/tracker.txt"
 
@@ -162,6 +163,9 @@ case "$EXPERIMENT_TYPE" in
         ;;
     "comparison")
         SCRIPT="./slurm_scripts/model_comparison.sh"
+        ;;
+    "layer_norm")
+        SCRIPT="./slurm_scripts/run_layer_norm.sh"
         ;;
     *)
         echo "Unknown experiment type: $EXPERIMENT_TYPE"

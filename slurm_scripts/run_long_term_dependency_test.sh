@@ -46,7 +46,7 @@ python ${BASE_PATH}/synthetic_data_generation/generate_long_term_data.py \
 setup_distributed_environment
 
 print_section_header "Model Training"
-srun --cpu-bind=none python ${BASE_PATH}/transformer/train.py \
+srun --cpu-bind=none python -m transformer.train \
     --predict \
     --epochs=$EPOCHS \
     --run $RUN_NUMBER \

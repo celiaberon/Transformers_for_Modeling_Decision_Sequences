@@ -2,8 +2,8 @@ import itertools
 import os
 import sys
 
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../')))
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../transformer/')))
+# sys.path.append(os.path.abspath(os.path.join(__file__, '../../')))
+# sys.path.append(os.path.abspath(os.path.join(__file__, '../../transformer/')))
 
 import numpy as np
 import pandas as pd
@@ -11,7 +11,7 @@ import torch
 
 import utils.file_management as fm
 from synthetic_data_generation.agent import RFLR_mouse
-from transformer.transformer import GPT, GPTConfig
+from transformer.transformer import GPTConfig
 
 logger = None
 
@@ -408,39 +408,6 @@ def align_predictions_with_gt(events, predictions, indices=None):
     events_['pred_correct_choice'] = events_['pred_choice'] == events_['choice']
 
     return events_
-
-
-def load_trained_model(run, model_name, device, **kwargs):
-
-    # Get model info from metadata
-    model_info = fm.parse_model_info(run, model_name=model_name)
-    if model_name is None:
-        model_name = model_info['model_name']
-    else:
-        assert (model_info['model_name'] == model_name) or (model_info['model_name'] == model_name.split('_cp')[0]), (
-            'did not recover correct model')
-
-    # Configure model using metadata
-    config = GPTConfig(
-        block_size=model_info['config'].get('Block size', 12),
-        vocab_size=model_info['config'].get('Vocab size', 4),
-        n_layer=model_info['config'].get('Number of layers', 1),
-        n_head=model_info['config'].get('Number of heads', 1),
-        n_embd=model_info['config'].get('Embedding size', 64)
-    )
-    # Load the trained model
-    model = GPT(config)
-    model_path = fm.get_experiment_file(f'{model_name}.pth', run, subdir='models')
-
-    try:
-        model.load_state_dict(torch.load(model_path, map_location=device, **kwargs))
-    except Exception:
-        checkpoint = torch.load(model_path, map_location=device,  **kwargs)
-        model.load_state_dict(checkpoint['model_state_dict'])
-    model.to(device)
-    model.eval()
-
-    return model, model_info, config
 
 
 def load_predictions(run, model_name, suffix='v'):
