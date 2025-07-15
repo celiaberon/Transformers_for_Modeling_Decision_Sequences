@@ -210,6 +210,29 @@ setup_standard_dataset() {
     fi
 }
 
+# === Helper Functions for Standard Dataset Management ===
+
+copy_metadata_and_logs_to_shared() {
+    local run_number=$1
+    local dataset_dir=$2
+    local dataset_identifier=$3
+    
+    local run_dir="${BASE_PATH}/experiments/run_${run_number}"
+    
+    # Copy metadata with identifier suffix
+    if [ -f "${run_dir}/metadata.txt" ]; then
+        cp "${run_dir}/metadata.txt" "${dataset_dir}/metadata_${dataset_identifier}.txt"
+        echo "Copied metadata: metadata_${dataset_identifier}.txt"
+    fi
+    
+    # Copy data generation log with identifier suffix
+    if [ -f "${run_dir}/logs/data_generation.log" ]; then
+        mkdir -p "${dataset_dir}/logs"
+        cp "${run_dir}/logs/data_generation.log" "${dataset_dir}/logs/data_generation_${dataset_identifier}.log"
+        echo "Copied data generation log: data_generation_${dataset_identifier}.log"
+    fi
+}
+
 # === File Locking for Dataset Generation ===
 acquire_dataset_lock() {
     local lock_file="$1"
@@ -312,6 +335,15 @@ generate_standard_dataset() {
         
         # Mark generation as complete
         if [ $? -eq 0 ]; then
+            # Run evaluation on the generated dataset
+            # The evaluation scripts will write directly to the shared dataset directory
+            echo "Running evaluation on generated standard dataset..."
+            python ${BASE_PATH}/evaluation/basic_evaluation.py --run $DATASET_CONFIG_run_number
+            python ${BASE_PATH}/evaluation/graphs_on_trial_block_transitions.py --run $DATASET_CONFIG_run_number
+            
+            # Copy metadata and log files to shared dataset folder
+            copy_metadata_and_logs_to_shared "$DATASET_CONFIG_run_number" "$dataset_dir" "$DATASET_IDENTIFIER"
+            
             touch "$marker_file"
             echo "Standard dataset generation completed successfully"
         else

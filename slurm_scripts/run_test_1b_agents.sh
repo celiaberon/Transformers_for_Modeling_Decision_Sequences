@@ -58,9 +58,10 @@ else
         --multiple_domains
 fi
 
-print_section_header "Basic Evaluation"
-python ${BASE_PATH}/evaluation/basic_evaluation.py --run $RUN_NUMBER
-python ${BASE_PATH}/evaluation/graphs_on_trial_block_transitions.py --run $RUN_NUMBER
+    # Run evaluation for individual datasets
+    python ${BASE_PATH}/evaluation/basic_evaluation.py --run $RUN_NUMBER
+    python ${BASE_PATH}/evaluation/graphs_on_trial_block_transitions.py --run $RUN_NUMBER
+fi
 
 print_section_header "Model Training"
 

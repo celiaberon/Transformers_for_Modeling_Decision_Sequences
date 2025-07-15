@@ -109,8 +109,8 @@ def get_experiment_file(filename_template, run=None, suffix='tr', subdir=None):
     standard_dataset_dir = os.environ.get('STANDARD_DATASET_DIR')
     dataset_identifier = os.environ.get('DATASET_IDENTIFIER', 'default')
     
-    if use_standard and standard_dataset_dir and subdir == 'seqs':
-        # Use standard dataset directory for sequence files
+    if use_standard and standard_dataset_dir and subdir in ['seqs', 'agent_behavior']:
+        # Use standard dataset directory for sequence files and agent_behavior
         target_dir = os.path.join(standard_dataset_dir, subdir or '')
         
         # Transform the filename template to use dataset identifier instead of 
@@ -120,8 +120,19 @@ def get_experiment_file(filename_template, run=None, suffix='tr', subdir=None):
             base_template = filename_template.replace('run_{}', '{}')
             filename = base_template.format(f"{dataset_identifier}_{suffix}")
         else:
-            # Fallback for other templates
-            filename = filename_template.format(f"{dataset_identifier}_{suffix}")
+            # For agent_behavior files, add dataset identifier suffix
+            if subdir == 'agent_behavior':
+                # Split filename into base and extension
+                parts = filename_template.split('.')
+                if len(parts) > 1:
+                    base = '.'.join(parts[:-1])
+                    ext = parts[-1]
+                    filename = f"{base}_{dataset_identifier}.{ext}"
+                else:
+                    filename = f"{filename_template}_{dataset_identifier}"
+            else:
+                # Fallback for other templates
+                filename = filename_template.format(f"{dataset_identifier}_{suffix}")
     else:
         # Use regular run directory
         run_dir = get_run_dir(run)

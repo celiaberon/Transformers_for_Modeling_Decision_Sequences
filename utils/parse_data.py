@@ -39,9 +39,19 @@ def parse_simulated_data(behavior_filename, high_port_filename, session_filename
     Notes: Typically for simulated data used as input for training model.
     """
 
-    run_and_suffix = behavior_filename.split('_')[-1].split('.')[0]
-    suffix = 'tr' if run_and_suffix.endswith('tr') else 'v'
-    run = int(run_and_suffix[:-len(suffix)])
+    # Handle both regular and standard dataset filename formats
+    filename_part = behavior_filename.split('_')[-1].split('.')[0]
+    suffix = 'tr' if filename_part.endswith('tr') else 'v'
+    
+    # Check if this is a standard dataset filename (e.g., "B_tr" instead of "114tr")
+    if filename_part == suffix:
+        # Standard dataset format: behavior_B_tr.txt
+        # Extract run number from environment variable or use a default
+        import os
+        run = int(os.environ.get('RUN_NUMBER', '1'))
+    else:
+        # Regular dataset format: behavior_run_114tr.txt
+        run = int(filename_part[:-len(suffix)])
 
     behavior_data = fm.read_sequence(behavior_filename)
     high_port_data = fm.read_sequence(high_port_filename)

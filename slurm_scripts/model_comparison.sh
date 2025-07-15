@@ -50,7 +50,7 @@ setup_standard_dataset \
 export RUN_NUMBER
 echo "Using run number: $RUN_NUMBER"
 
-# Data generation and basic evaluation
+# Data generation
 print_section_header "Data Generation"
 if [ "$USE_STANDARD_DATASET" = "true" ]; then
     generate_standard_dataset
@@ -63,9 +63,11 @@ else
         --no_overwrite \
         --config_file "$DOMAIN_CONFIG" \
         --multiple_domains
+    
+    # Run evaluation for individual datasets
+    python ${BASE_PATH}/evaluation/basic_evaluation.py --run $RUN_NUMBER
+    python ${BASE_PATH}/evaluation/graphs_on_trial_block_transitions.py --run $RUN_NUMBER
 fi
-python ${BASE_PATH}/evaluation/basic_evaluation.py --run $RUN_NUMBER
-python ${BASE_PATH}/evaluation/graphs_on_trial_block_transitions.py --run $RUN_NUMBER
 
 # Setup distributed environment
 setup_distributed_environment
