@@ -69,7 +69,7 @@ def write_predictions(model_name, predictions, last_step=False):
     vocab = ['R', 'r', 'L', 'l']
     itos = {i: ch for i, ch in enumerate(vocab)}
     
-    pred_file = fm.get_experiment_file(f"learning_{model_name}_val_preds.txt", run_number, subdir='seqs')
+    pred_file = fm.get_experiment_file(f"learning_{model_name}_val_preds.txt", run_number, subdir='preds')
     
     if predictions['step'][0] == 0:
         with open(pred_file, 'w') as f:
@@ -330,7 +330,7 @@ def estimate_loss(model, val_loader, ddp, step, predict=False, policy='argmax'):
 
 def update_predictions_file(model_name, starting_step):
     """Update predictions file to remove predictions after starting_step."""
-    pred_file = fm.get_experiment_file(f"learning_{model_name}_val_preds.txt", run_number, subdir='seqs')
+    pred_file = fm.get_experiment_file(f"learning_{model_name}_val_preds.txt", run_number, subdir='preds')
 
     # Check if file exists
     if not os.path.exists(pred_file):

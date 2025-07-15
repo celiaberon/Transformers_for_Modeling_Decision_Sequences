@@ -37,7 +37,7 @@ def test_model_equivalence():
     reduced_model.eval()
     
     # Create test input
-    batch_size = 2
+    batch_size = 200
     seq_len = 6
     test_input = torch.randint(0, config.vocab_size, (batch_size, seq_len))
     

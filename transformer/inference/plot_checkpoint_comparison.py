@@ -104,8 +104,8 @@ def main(run=None, suffix: str = 'v'):
 
     run = run or fm.get_latest_run()
 
-    checkpoint_files = get_checkpoint_files(run, include_final=False, subdir='seqs', pattern='pred_model', ext='.txt')
-    indices_files = get_checkpoint_files(run, include_final=False, subdir='seqs', pattern='pred_indices', ext='.txt')
+    checkpoint_files = get_checkpoint_files(run, include_final=False, subdir='preds', pattern='pred_model', ext='.txt')
+    indices_files = get_checkpoint_files(run, include_final=False, subdir='preds', pattern='pred_indices', ext='.txt')
     model_files = get_checkpoint_files(run, include_final=True)
 
     if not checkpoint_files:

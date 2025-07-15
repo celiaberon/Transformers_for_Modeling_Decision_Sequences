@@ -153,11 +153,11 @@ def main(run=None, model_name=None):
     pred_tokens = [itos[idx.item()] for idx in predictions['pred_next']]
 
     # Write predictions to file
-    pred_file = fm.get_experiment_file(f"pred_{model_name}.txt", run, subdir='seqs')
+    pred_file = fm.get_experiment_file(f"pred_{model_name}.txt", run, subdir='preds')
     fm.write_sequence(pred_file, pred_tokens)
 
     # For downstream analysis, we need to save the indices for alignment
-    indices_file = fm.get_experiment_file(f"pred_indices_{model_name}.txt", run, subdir='seqs')
+    indices_file = fm.get_experiment_file(f"pred_indices_{model_name}.txt", run, subdir='preds')
     with open(indices_file, 'w') as f:
         for idx in predictions['y_indices']:
             f.write(f"{idx.item()}\n")
