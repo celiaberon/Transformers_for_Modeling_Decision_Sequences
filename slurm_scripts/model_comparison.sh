@@ -29,11 +29,13 @@ DOMAIN_CONFIG=${9:-"domains.ini"}
 DOMAIN_ID=${10:-"B"}
 USE_STANDARD_DATASET=${11:-"false"}
 COMPARISON_DIR=${12:-""}
+DEBUG_MODE=${13:-"false"}
 
 export DOMAIN_ID=$DOMAIN_ID
 export DOMAIN_CONFIG=$DOMAIN_CONFIG
 export EXPERIMENT_TYPE="comparison"
 export COMPARISON_DIR=$COMPARISON_DIR
+export DEBUG_MODE=$DEBUG_MODE
 
 # Setup standard dataset if requested
 setup_standard_dataset \

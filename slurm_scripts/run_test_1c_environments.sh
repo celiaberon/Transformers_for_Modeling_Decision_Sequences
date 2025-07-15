@@ -29,6 +29,10 @@ EMBD_DIM=${7:-64}
 BATCH_SIZE=${8:-256}
 DOMAIN_CONFIG=${9:-"vary_environment_domains.ini"}
 USE_STANDARD_DATASET=${10:-"false"}
+DEBUG_MODE=${11:-"false"}
+
+export EXPERIMENT_TYPE="environment_test"
+export DEBUG_MODE=$DEBUG_MODE
 
 # Setup standard dataset if requested
 setup_standard_dataset \

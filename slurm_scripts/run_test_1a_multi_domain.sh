@@ -29,6 +29,10 @@ BATCH_SIZE=${8:-256}
 DOMAIN_CONFIG=${9:-"domains.ini"}
 DOMAIN_ID=${10:-"B"}  # unused for multi-domain
 USE_STANDARD_DATASET=${11:-"false"}
+DEBUG_MODE=${12:-"false"}
+
+export EXPERIMENT_TYPE="multi_domain"
+export DEBUG_MODE=$DEBUG_MODE
 
 # Setup standard dataset if requested
 setup_standard_dataset \

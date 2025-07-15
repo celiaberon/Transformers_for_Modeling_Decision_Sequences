@@ -29,6 +29,10 @@ EMBD_DIM=${7:-64}
 BATCH_SIZE=${8:-256}
 DOMAIN_CONFIG=${9:-"evidence_based_agent_domains.ini"}
 USE_STANDARD_DATASET=${10:-"false"}
+DEBUG_MODE=${11:-"false"}
+
+export EXPERIMENT_TYPE="agents_test"
+export DEBUG_MODE=$DEBUG_MODE
 
 # Setup standard dataset if requested
 setup_standard_dataset \

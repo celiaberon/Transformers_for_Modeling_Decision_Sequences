@@ -1,22 +1,22 @@
 import argparse
 import getpass
+import glob
+import logging
 import math
 import os
 import sys
 import time
-import glob
-import logging
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.distributed as dist
+import torch.nn.functional as F
 # import wandb commented out for now because of permission errors
 from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
-import torch.nn.functional as F
 
-from transformer import GPT, DataLoaderLite, DataLoader, DDPConfig, GPTConfig, DataLoaderShuffle
+from transformer import GPT, DataLoader, DDPConfig, GPTConfig
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import utils.file_management as fm
@@ -121,14 +121,19 @@ def write_experiment_summary(args, model, model_name, val_loss_steps, max_steps)
     """Write experiment summary to CSV for tracking and analysis."""
     import pandas as pd
 
+    # Skip writing if in debug mode
+    debug_mode = os.environ.get('DEBUG_MODE', 'false').lower() == 'true'
+    if debug_mode:
+        logger.info("DEBUG_MODE is enabled - skipping model summary write")
+        return
+
     def _load_summary(path_to_file):
         try:
             return pd.read_csv(path_to_file, index_col=None)
         except FileNotFoundError:
             return pd.DataFrame()
 
-    def _save_summary(curr_summary):
-        path_to_file = os.path.abspath(os.path.join(__file__, '../../', 'model_summary.csv'))
+    def _save_summary(curr_summary, path_to_file):
         summary = _load_summary(path_to_file)
         summary = pd.concat((summary, curr_summary)).reset_index(drop=True)
         summary.to_csv(path_to_file, index=False)
@@ -145,11 +150,34 @@ def write_experiment_summary(args, model, model_name, val_loss_steps, max_steps)
     else:
         losses['best_val_full_loss'] = min(val_loss_steps)
         losses['best_val_full_loss_step'] = xs[val_loss_steps.index(min(val_loss_steps))]
+    
+    # Determine the output file path based on experiment type
+    experiment_type = os.environ.get('EXPERIMENT_TYPE', None)
+    comparison_dir = os.environ.get('COMPARISON_DIR', None)
+    
+    if experiment_type == 'comparison' and comparison_dir:
+        # For comparison experiments, write to comparison-specific CSV
+        path_to_file = os.path.join(comparison_dir, 'comparison_summary.csv')
+        path_to_file = os.path.abspath(path_to_file)
+    else:
+        # For regular experiments, write to main model_summary.csv
+        path_to_file = os.path.abspath(
+            os.path.join(__file__, '../../', 'model_summary.csv')
+        )
+    
+    # Add prefix to domain_id if using shared datasets
+    domain_id = os.environ.get('DOMAIN_ID', None)
+    use_standard_dataset = (
+        os.environ.get('USE_STANDARD_DATASET', 'false').lower() == 'true'
+    )
+    if use_standard_dataset and domain_id:
+        domain_id = f"shared_{domain_id}"
+    
     summary = {
         'model_id': os.environ.get('SLURM_JOB_NAME', 'unknown_job'),
-        'experiment_type': os.environ.get('EXPERIMENT_TYPE', None),
+        'experiment_type': experiment_type,
         'domain_config': os.environ.get('DOMAIN_CONFIG', None),
-        'domain_id': os.environ.get('DOMAIN_ID', None),
+        'domain_id': domain_id,
         'num_samples': model_name[len("model_seen"):],
         'num_parameters': sum(p.numel() for p in model.parameters()),
         'max_steps': max_steps,
@@ -160,7 +188,7 @@ def write_experiment_summary(args, model, model_name, val_loss_steps, max_steps)
     
     logger.info(f"Experiment summary:\n{summary}")
     df = pd.DataFrame(summary, index=[0])
-    _save_summary(df)
+    _save_summary(df, path_to_file)
 
 def save_model(model, model_name, run_number, *, is_checkpoint=False, step=None, compile=False, **kwargs):
     """Save model weights or checkpoint."""

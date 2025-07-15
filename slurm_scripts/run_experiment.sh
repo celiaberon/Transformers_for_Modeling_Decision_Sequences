@@ -28,10 +28,12 @@ BATCH_SIZE=${8:-256}
 DOMAIN_CONFIG=${9:-"domains.ini"}
 DOMAIN_ID=${10:-"B"}
 USE_STANDARD_DATASET=${11:-"false"}
+DEBUG_MODE=${12:-"false"}
 
 export DOMAIN_ID=$DOMAIN_ID
 export DOMAIN_CONFIG=$DOMAIN_CONFIG
 export EXPERIMENT_TYPE="basic"
+export DEBUG_MODE=$DEBUG_MODE
 
 # Setup standard dataset if requested
 setup_standard_dataset \

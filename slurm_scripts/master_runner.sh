@@ -13,6 +13,7 @@ DOMAIN_CONFIG_ARRAY=("three_domains.ini")
 DOMAIN_ID_ARRAY=("A" "B") # "C" "B_not_sticky")
 EXPERIMENT_TYPE="basic"  # define the experiment you are running
 USE_STANDARD_DATASET=true  # Standard dataset flag - when true, uses a shared dataset for all runs
+DEBUG_MODE=false  # Debug mode flag - when true, prevents writing to model_summary.csv
 
 # Options are:
 #   "basic": run_experiment.sh
@@ -112,6 +113,13 @@ setup_environment
 # Use the pre-assigned run number instead of generating a new one
 RUN_NUMBER=${run_number}
 
+# Export environment variables for the training process
+export EXPERIMENT_TYPE="$EXPERIMENT_TYPE"
+export DEBUG_MODE="$DEBUG_MODE"
+if [ "$EXPERIMENT_TYPE" = "comparison" ]; then
+    export COMPARISON_DIR="$COMPARISON_DIR"
+fi
+
 # Create logs directory for this run and redirect outputs to separate log files
 if [ "$EXPERIMENT_TYPE" = "comparison" ]; then
     RUN_DIR="$COMPARISON_DIR/run_\${RUN_NUMBER}"
@@ -163,9 +171,9 @@ echo "run\${RUN_NUMBER}: $EXPERIMENT_TYPE, $epochs epochs, $train_steps train st
 
 # Run the experiment
 if [ "$EXPERIMENT_TYPE" = "comparison" ]; then
-    bash \$SCRIPT \${RUN_NUMBER} $layers $heads $epochs $train_steps $context_length $embd_dim $batch_size "$domain_config" $domain_id "$USE_STANDARD_DATASET" "$COMPARISON_DIR"
+    bash \$SCRIPT \${RUN_NUMBER} $layers $heads $epochs $train_steps $context_length $embd_dim $batch_size "$domain_config" $domain_id "$USE_STANDARD_DATASET" "$COMPARISON_DIR" "$DEBUG_MODE"
 else
-    bash \$SCRIPT \${RUN_NUMBER} $layers $heads $epochs $train_steps $context_length $embd_dim $batch_size "$domain_config" $domain_id "$USE_STANDARD_DATASET"
+    bash \$SCRIPT \${RUN_NUMBER} $layers $heads $epochs $train_steps $context_length $embd_dim $batch_size "$domain_config" $domain_id "$USE_STANDARD_DATASET" "$DEBUG_MODE"
 fi
 
 echo "Experiment completed: run\${RUN_NUMBER}"
