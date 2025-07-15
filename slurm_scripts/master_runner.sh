@@ -12,6 +12,7 @@ BATCH_SIZE_ARRAY=(256)
 DOMAIN_CONFIG_ARRAY=("three_domains.ini")
 DOMAIN_ID_ARRAY=("A" "B") # "C" "B_not_sticky")
 EXPERIMENT_TYPE="basic"  # define the experiment you are running
+export EXPERIMENT_TYPE  # Export immediately so it's available to all functions
 USE_STANDARD_DATASET=true  # Standard dataset flag - when true, uses a shared dataset for all runs
 DEBUG_MODE=false  # Debug mode flag - when true, prevents writing to model_summary.csv
 
@@ -22,7 +23,7 @@ DEBUG_MODE=false  # Debug mode flag - when true, prevents writing to model_summa
 #   "environment_test": run_test_1c_environments.sh
 #   "comparison": model_comparison.sh
 
-TRACKER_FILE="tracker.txt"
+TRACKER_FILE="experiments/${EXPERIMENT_TYPE}/tracker.txt"
 
 # Initialize starting run number - scan existing runs once at the beginning
 initialize_run
@@ -30,10 +31,13 @@ NEXT_RUN_NUMBER=$RUN_NUMBER
 
 # Initialize comparison directory if needed
 if [ "$EXPERIMENT_TYPE" = "comparison" ]; then
+    # Ensure comparison base directory exists
+    mkdir -p "experiments/comparison"
+    
     # Get next comparison number
-    COMPARISON_NUMBER=$(ls -d experiments/comparison_* 2>/dev/null | sort -t_ -k2 -n | tail -n1 | sed 's/.*comparison_//' || echo 0)
+    COMPARISON_NUMBER=$(ls -d experiments/comparison/comparison_* 2>/dev/null | sort -t_ -k2 -n | tail -n1 | sed 's/.*comparison_//' || echo 0)
     COMPARISON_NUMBER=$((COMPARISON_NUMBER + 1))
-    COMPARISON_DIR="experiments/comparison_${COMPARISON_NUMBER}"
+    COMPARISON_DIR="experiments/comparison/comparison_${COMPARISON_NUMBER}"
     mkdir -p "$COMPARISON_DIR"
     echo "Created comparison directory: $COMPARISON_DIR"
     
@@ -124,7 +128,7 @@ fi
 if [ "$EXPERIMENT_TYPE" = "comparison" ]; then
     RUN_DIR="$COMPARISON_DIR/run_\${RUN_NUMBER}"
 else
-    RUN_DIR="experiments/run_\${RUN_NUMBER}"
+    RUN_DIR="experiments/$EXPERIMENT_TYPE/run_\${RUN_NUMBER}"
 fi
 LOG_DIR="\${RUN_DIR}/logs"
 mkdir -p "\${LOG_DIR}"

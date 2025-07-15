@@ -17,7 +17,10 @@ source "./slurm_scripts/common_functions.sh"
 setup_environment
 
 # Accept parameters from master runner
+echo "DEBUG: run_experiment.sh called with first argument: '$1'"
+echo "DEBUG: EXPERIMENT_TYPE at start: '$EXPERIMENT_TYPE'"
 RUN_NUMBER=${1:-$(get_next_run)}
+echo "DEBUG: Final RUN_NUMBER in run_experiment.sh: $RUN_NUMBER"
 N_LAYER=${2:-4}
 N_HEAD=${3:-4}
 EPOCHS=${4:-100}
@@ -32,7 +35,7 @@ DEBUG_MODE=${12:-"false"}
 
 export DOMAIN_ID=$DOMAIN_ID
 export DOMAIN_CONFIG=$DOMAIN_CONFIG
-export EXPERIMENT_TYPE="basic"
+export EXPERIMENT_TYPE=${EXPERIMENT_TYPE:-"basic"}  # Use inherited value or default to basic
 export DEBUG_MODE=$DEBUG_MODE
 
 # Setup standard dataset if requested

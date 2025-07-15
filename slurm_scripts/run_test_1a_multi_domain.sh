@@ -92,7 +92,9 @@ echo "Total Training Time= $total_time seconds"
 setup_gpu_environment
 
 # Automatically remove large learning files
-rm "${BASE_PATH}/experiments/run_${RUN_NUMBER}/seqs/learning_model"*"val_preds.txt" 2>/dev/null || true
+# Use experiment type to determine directory
+experiment_type=${EXPERIMENT_TYPE:-multi_domain}
+rm "${BASE_PATH}/experiments/${experiment_type}/run_${RUN_NUMBER}/seqs/learning_model"*"val_preds.txt" 2>/dev/null || true
 
 print_section_header "Transformer Evaluation"
 python ${INFERENCE_PATH}/guess_using_transformer.py --run $RUN_NUMBER

@@ -27,7 +27,10 @@ get_next_run() {
     if [ -n "$COMPARISON_DIR" ]; then
         local latest=$(ls -d ${COMPARISON_DIR}/run_* 2>/dev/null | sort -t_ -k2 -n | tail -n1 | sed 's/.*run_//')
     else
-        local latest=$(ls -d ${BASE_PATH}/experiments/run_* 2>/dev/null | sort -t_ -k2 -n | tail -n1 | sed 's/.*run_//')
+        # Use experiment type to determine directory
+        local experiment_type=${EXPERIMENT_TYPE:-basic}
+        local search_dir="${BASE_PATH}/experiments/${experiment_type}"
+        local latest=$(ls -d ${search_dir}/run_* 2>/dev/null | sort -t_ -k2 -n | tail -n1 | sed 's/.*run_//')
     fi
     if [ -z "$latest" ]; then
         echo 1
@@ -194,8 +197,9 @@ setup_standard_dataset() {
             # For comparison experiments, use shared datasets folder in comparison directory
             STANDARD_DATASET_DIR="${DATASET_CONFIG_comparison_dir}/shared_datasets"
         else
-            # For non-comparison experiments, use shared datasets folder in experiments root
-            STANDARD_DATASET_DIR="${BASE_PATH}/experiments/shared_datasets"
+            # For non-comparison experiments, use shared datasets folder within experiment type
+            local experiment_type=${EXPERIMENT_TYPE:-basic}
+            STANDARD_DATASET_DIR="${BASE_PATH}/experiments/${experiment_type}/shared_datasets"
         fi
         
         mkdir -p "$STANDARD_DATASET_DIR"
@@ -212,19 +216,32 @@ setup_standard_dataset() {
 
 # === Helper Functions for Standard Dataset Management ===
 
-copy_metadata_and_logs_to_shared() {
+copy_metadata_to_shared() {
     local run_number=$1
     local dataset_dir=$2
     local dataset_identifier=$3
     
-    local run_dir="${BASE_PATH}/experiments/run_${run_number}"
+    # Use experiment type to determine directory
+    local experiment_type=${EXPERIMENT_TYPE:-basic}
+    local run_dir="${BASE_PATH}/experiments/${experiment_type}/run_${run_number}"
     
     # Copy metadata with identifier suffix
     if [ -f "${run_dir}/metadata.txt" ]; then
         cp "${run_dir}/metadata.txt" "${dataset_dir}/metadata_${dataset_identifier}.txt"
         echo "Copied metadata: metadata_${dataset_identifier}.txt"
     fi
+
+}
+
+copy_logs_to_shared() {
+    local run_number=$1
+    local dataset_dir=$2
+    local dataset_identifier=$3
     
+    # Use experiment type to determine directory
+    local experiment_type=${EXPERIMENT_TYPE:-basic}
+    local run_dir="${BASE_PATH}/experiments/${experiment_type}/run_${run_number}"
+
     # Copy data generation log with identifier suffix
     if [ -f "${run_dir}/logs/data_generation.log" ]; then
         mkdir -p "${dataset_dir}/logs"
@@ -335,14 +352,17 @@ generate_standard_dataset() {
         
         # Mark generation as complete
         if [ $? -eq 0 ]; then
+
+            # Copy metadata to shared dataset folder
+            copy_metadata_to_shared "$DATASET_CONFIG_run_number" "$dataset_dir" "$DATASET_IDENTIFIER"
+            
             # Run evaluation on the generated dataset
-            # The evaluation scripts will write directly to the shared dataset directory
             echo "Running evaluation on generated standard dataset..."
             python ${BASE_PATH}/evaluation/basic_evaluation.py --run $DATASET_CONFIG_run_number
             python ${BASE_PATH}/evaluation/graphs_on_trial_block_transitions.py --run $DATASET_CONFIG_run_number
             
-            # Copy metadata and log files to shared dataset folder
-            copy_metadata_and_logs_to_shared "$DATASET_CONFIG_run_number" "$dataset_dir" "$DATASET_IDENTIFIER"
+            # Copy log files to shared dataset folder
+            copy_logs_to_shared "$DATASET_CONFIG_run_number" "$dataset_dir" "$DATASET_IDENTIFIER"
             
             touch "$marker_file"
             echo "Standard dataset generation completed successfully"
@@ -436,7 +456,9 @@ run_on_gpus() {
 process_checkpoints() {
     # Find checkpoint files and extract base names
     checkpoint_files=()
-    for model_file in "${BASE_PATH}/experiments/run_${RUN_NUMBER}/models/model_"*"cp"*".pth"; do
+    # Use experiment type to determine directory
+    local experiment_type=${EXPERIMENT_TYPE:-basic}
+    for model_file in "${BASE_PATH}/experiments/${experiment_type}/run_${RUN_NUMBER}/models/model_"*"cp"*".pth"; do
         if [ -f "$model_file" ]; then
             checkpoint_files+=("$model_file")
         fi

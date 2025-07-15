@@ -6,7 +6,7 @@ import sys
 
 def get_latest_run():
     """
-    Find the highest numbered run directory.
+    Find the highest numbered run directory within the current experiment type.
     
     Returns:
         int: Highest run number, or 0 if no runs exist
@@ -18,7 +18,10 @@ def get_latest_run():
     if comparison_dir:
         run_dirs = glob.glob(os.path.join(comparison_dir, "run_*"))
     else:
-        run_dirs = glob.glob(os.path.join(base_path, "experiments", "run_*"))
+        # Use experiment type to determine directory
+        experiment_type = os.environ.get('EXPERIMENT_TYPE', 'basic')
+        experiment_dir = os.path.join(base_path, "experiments", experiment_type)
+        run_dirs = glob.glob(os.path.join(experiment_dir, "run_*"))
         
     if not run_dirs:
         return 0  # if no runs, return 0 so first run is 1
@@ -44,7 +47,9 @@ def get_run_dir(run=None):
     if comparison_dir:
         return os.path.join(comparison_dir, f"run_{run}")
     else:
-        return os.path.join(base_path, "experiments", f"run_{run}")
+        # Use experiment type to determine directory
+        experiment_type = os.environ.get('EXPERIMENT_TYPE', 'basic')
+        return os.path.join(base_path, "experiments", experiment_type, f"run_{run}")
 
 
 def ensure_run_dir(run, overwrite=True, subdir=None):
@@ -227,7 +232,22 @@ def get_domain_params(run=None, domain_id=None, suffix='tr'):
     """
     Get the parameters for a specific domain.
     """
-    metadata_file = get_experiment_file("metadata.txt", run)
+    # Check if we're using standard dataset
+    use_standard = (os.environ.get('USE_STANDARD_DATASET', 'false').lower() == 'true')
+    
+    if use_standard:
+        # For standard datasets, look for metadata in the shared dataset directory
+        standard_dataset_dir = os.environ.get('STANDARD_DATASET_DIR')
+        dataset_identifier = os.environ.get('DATASET_IDENTIFIER', 'default')
+        
+        if standard_dataset_dir and dataset_identifier:
+            metadata_file = os.path.join(standard_dataset_dir, f"metadata_{dataset_identifier}.txt")
+        else:
+            # Fallback to regular metadata file
+            metadata_file = get_experiment_file("metadata.txt", run)
+    else:
+        # Regular dataset - use metadata.txt in run directory
+        metadata_file = get_experiment_file("metadata.txt", run)
 
     with open(metadata_file, 'r') as f:
         data_section = None

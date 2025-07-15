@@ -161,8 +161,11 @@ def write_experiment_summary(args, model, model_name, val_loss_steps, max_steps)
         path_to_file = os.path.abspath(path_to_file)
     else:
         # For regular experiments, write to main model_summary.csv
+        # path_to_file = os.path.abspath(
+        #     os.path.join(__file__, '../../', 'model_summary.csv')
+        # )
         path_to_file = os.path.abspath(
-            os.path.join(__file__, '../../', 'model_summary.csv')
+            os.path.join(__file__, '../../', 'experiments', experiment_type, 'model_summary.csv')
         )
     
     # Add prefix to domain_id if using shared datasets
