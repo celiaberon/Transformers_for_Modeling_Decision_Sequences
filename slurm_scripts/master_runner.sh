@@ -12,18 +12,34 @@ BATCH_SIZE_ARRAY=(256)
 DOMAIN_CONFIG_ARRAY=("three_domains.ini")
 DOMAIN_ID_ARRAY=("A" "B" "C" "B_not_sticky")
 EXPERIMENT_TYPE="basic"  # define the experiment you are running
+USE_STANDARD_DATASET=false  # Standard dataset flag - when true, uses a shared dataset for all runs
 
 # Options are:
 #   "basic": run_experiment.sh
 #   "multi_domain": run_test_1a_multi_domain.sh
 #   "agents_test": run_test_1b_agents.sh
 #   "environment_test": run_test_1c_environments.sh
+#   "comparison": model_comparison.sh
 
 TRACKER_FILE="tracker.txt"
 
 # Initialize starting run number - scan existing runs once at the beginning
 initialize_run
 NEXT_RUN_NUMBER=$RUN_NUMBER
+
+# Initialize comparison directory if needed
+if [ "$EXPERIMENT_TYPE" = "comparison" ]; then
+    # Get next comparison number
+    COMPARISON_NUMBER=$(ls -d experiments/comparison_* 2>/dev/null | sort -t_ -k2 -n | tail -n1 | sed 's/.*comparison_//' || echo 0)
+    COMPARISON_NUMBER=$((COMPARISON_NUMBER + 1))
+    COMPARISON_DIR="experiments/comparison_${COMPARISON_NUMBER}"
+    mkdir -p "$COMPARISON_DIR"
+    echo "Created comparison directory: $COMPARISON_DIR"
+    
+    # Update tracker file for comparison
+    TRACKER_FILE="${COMPARISON_DIR}/tracker.txt"
+    echo "Comparison ${COMPARISON_NUMBER} started at $(date)" > "$TRACKER_FILE"
+fi
 
 # At the top of your script
 MAX_CONCURRENT_JOBS=12
@@ -97,7 +113,11 @@ setup_environment
 RUN_NUMBER=${run_number}
 
 # Create logs directory for this run and redirect outputs to separate log files
-RUN_DIR="experiments/run_\${RUN_NUMBER}"
+if [ "$EXPERIMENT_TYPE" = "comparison" ]; then
+    RUN_DIR="$COMPARISON_DIR/run_\${RUN_NUMBER}"
+else
+    RUN_DIR="experiments/run_\${RUN_NUMBER}"
+fi
 LOG_DIR="\${RUN_DIR}/logs"
 mkdir -p "\${LOG_DIR}"
 
@@ -128,6 +148,9 @@ case "$EXPERIMENT_TYPE" in
     "multi_domain")
         SCRIPT="./slurm_scripts/run_test_1a_multi_domain.sh"
         ;;
+    "comparison")
+        SCRIPT="./slurm_scripts/model_comparison.sh"
+        ;;
     *)
         echo "Unknown experiment type: $EXPERIMENT_TYPE"
         exit 1
@@ -139,7 +162,11 @@ echo " " >> $TRACKER_FILE
 echo "run\${RUN_NUMBER}: $EXPERIMENT_TYPE, $epochs epochs, $train_steps train steps, $layers layers, $heads heads, $context_length context length, $embd_dim embedding dimensions, $domain_config" >> $TRACKER_FILE
 
 # Run the experiment
-bash \$SCRIPT \${RUN_NUMBER} $layers $heads $epochs $train_steps $context_length $embd_dim $batch_size "$domain_config" $domain_id
+if [ "$EXPERIMENT_TYPE" = "comparison" ]; then
+    bash \$SCRIPT \${RUN_NUMBER} $layers $heads $epochs $train_steps $context_length $embd_dim $batch_size "$domain_config" $domain_id "$USE_STANDARD_DATASET" "$COMPARISON_DIR"
+else
+    bash \$SCRIPT \${RUN_NUMBER} $layers $heads $epochs $train_steps $context_length $embd_dim $batch_size "$domain_config" $domain_id "$USE_STANDARD_DATASET"
+fi
 
 echo "Experiment completed: run\${RUN_NUMBER}"
 EOL

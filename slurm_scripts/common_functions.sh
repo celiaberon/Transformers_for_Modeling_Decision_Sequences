@@ -23,7 +23,12 @@ setup_environment() {
 
 # === Run Number Management ===
 get_next_run() {
-    local latest=$(ls -d ${BASE_PATH}/experiments/run_* 2>/dev/null | sort -t_ -k2 -n | tail -n1 | sed 's/.*run_//')
+    # Check if we're in a comparison directory context
+    if [ -n "$COMPARISON_DIR" ]; then
+        local latest=$(ls -d ${COMPARISON_DIR}/run_* 2>/dev/null | sort -t_ -k2 -n | tail -n1 | sed 's/.*run_//')
+    else
+        local latest=$(ls -d ${BASE_PATH}/experiments/run_* 2>/dev/null | sort -t_ -k2 -n | tail -n1 | sed 's/.*run_//')
+    fi
     if [ -z "$latest" ]; then
         echo 1
     else
@@ -43,6 +48,290 @@ initialize_run() {
     
     echo "Starting run $RUN_NUMBER"
     export RUN_NUMBER
+}
+
+# === Dataset Configuration Management ===
+# Create a dataset configuration structure
+create_dataset_config() {
+    # Initialize associative array for dataset configuration
+    declare -A config
+    
+    # Set defaults
+    config[domain_config]="domains.ini"
+    config[domain_id]="default"
+    config[multiple_domains]="false"
+    config[train_steps]="100000"
+    config[val_steps]="1000000"
+    config[train_domains]=""
+    config[val_domains]=""
+    config[use_custom_domains]="false"
+    config[run_number]="1"
+    config[comparison_dir]=""
+    config[use_standard_dataset]="false"
+    
+    # Parse named arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --domain-config)
+                config[domain_config]="$2"
+                shift 2
+                ;;
+            --domain-id)
+                config[domain_id]="$2"
+                shift 2
+                ;;
+            --multiple-domains)
+                config[multiple_domains]="$2"
+                shift 2
+                ;;
+            --train-steps)
+                config[train_steps]="$2"
+                shift 2
+                ;;
+            --val-steps)
+                config[val_steps]="$2"
+                shift 2
+                ;;
+            --train-domains)
+                config[train_domains]="$2"
+                shift 2
+                ;;
+            --val-domains)
+                config[val_domains]="$2"
+                shift 2
+                ;;
+            --use-custom-domains)
+                config[use_custom_domains]="$2"
+                shift 2
+                ;;
+            --run-number)
+                config[run_number]="$2"
+                shift 2
+                ;;
+            --comparison-dir)
+                config[comparison_dir]="$2"
+                shift 2
+                ;;
+            --use-standard-dataset)
+                config[use_standard_dataset]="$2"
+                shift 2
+                ;;
+            *)
+                echo "Unknown parameter: $1"
+                shift
+                ;;
+        esac
+    done
+    
+    # Export the configuration as a serialized string
+    local config_str=""
+    for key in "${!config[@]}"; do
+        config_str+="${key}=${config[$key]}|"
+    done
+    echo "${config_str%|}"  # Remove trailing |
+}
+
+# Parse dataset configuration from serialized string
+parse_dataset_config() {
+    local config_str="$1"
+    declare -A config
+    
+    IFS='|' read -ra pairs <<< "$config_str"
+    for pair in "${pairs[@]}"; do
+        IFS='=' read -r key value <<< "$pair"
+        config[$key]="$value"
+    done
+    
+    # Export as global associative array
+    for key in "${!config[@]}"; do
+        eval "DATASET_CONFIG_${key}='${config[$key]}'"
+    done
+}
+
+# Generate domain identifier from configuration
+generate_domain_identifier() {
+    local config_str="$1"
+    parse_dataset_config "$config_str"
+    
+    local config_base="${DATASET_CONFIG_domain_config%.ini}"
+    
+    # For custom domain scripts
+    if [ -n "$DATASET_CONFIG_train_domains" ] && [ -n "$DATASET_CONFIG_val_domains" ]; then
+        # Sort domains to ensure consistent naming
+        local sorted_train=$(echo "$DATASET_CONFIG_train_domains" | tr ' ' '\n' | sort | tr '\n' '_' | sed 's/_$//')
+        local sorted_val=$(echo "$DATASET_CONFIG_val_domains" | tr ' ' '\n' | sort | tr '\n' '_' | sed 's/_$//')
+        echo "${config_base}_train_${sorted_train}_val_${sorted_val}"
+        return
+    fi
+    
+    # For standard multi-domain generation
+    if [ "$DATASET_CONFIG_multiple_domains" = "true" ]; then
+        # Determine actual domains from config file
+        local config_path="${BASE_PATH}/synthetic_data_generation/${DATASET_CONFIG_domain_config}"
+        if [ -f "$config_path" ]; then
+            # Extract domain IDs from config file
+            local domains=$(grep '^\[' "$config_path" | sed 's/\[//g' | sed 's/\]//g' | sort | tr '\n' '_' | sed 's/_$//')
+            echo "${config_base}_${domains}"
+        else
+            echo "${config_base}_multidomain"
+        fi
+    else
+        # Single domain
+        echo "${config_base}_${DATASET_CONFIG_domain_id}"
+    fi
+}
+
+# === Standard Dataset Management ===
+setup_standard_dataset() {
+    # Create configuration from named arguments
+    local config_str=$(create_dataset_config "$@")
+    parse_dataset_config "$config_str"
+    
+    if [ "$DATASET_CONFIG_use_standard_dataset" = "true" ]; then
+        # Generate domain-specific identifier
+        DATASET_IDENTIFIER=$(generate_domain_identifier "$config_str")
+        
+        if [ -n "$DATASET_CONFIG_comparison_dir" ]; then
+            # For comparison experiments, use shared dataset in comparison directory
+            STANDARD_DATASET_DIR="${DATASET_CONFIG_comparison_dir}/shared_dataset_${DATASET_IDENTIFIER}"
+            mkdir -p "$STANDARD_DATASET_DIR"
+            export STANDARD_DATASET_DIR
+            export USE_STANDARD_DATASET=true
+            export DATASET_IDENTIFIER
+            export DATASET_CONFIG_STR="$config_str"
+            echo "Using standard dataset in: $STANDARD_DATASET_DIR"
+        else
+            # For non-comparison experiments, use shared dataset in experiments root
+            STANDARD_DATASET_DIR="${BASE_PATH}/experiments/shared_dataset_${DATASET_IDENTIFIER}"
+            mkdir -p "$STANDARD_DATASET_DIR"
+            export STANDARD_DATASET_DIR
+            export USE_STANDARD_DATASET=true
+            export DATASET_IDENTIFIER
+            export DATASET_CONFIG_STR="$config_str"
+            echo "Using standard dataset in: $STANDARD_DATASET_DIR"
+        fi
+    else
+        export USE_STANDARD_DATASET=false
+        echo "Using individual datasets for each run"
+    fi
+}
+
+# === File Locking for Dataset Generation ===
+acquire_dataset_lock() {
+    local lock_file="$1"
+    local timeout=300  # 5 minutes timeout
+    local elapsed=0
+    local wait_interval=5
+    
+    while [ $elapsed -lt $timeout ]; do
+        if (set -C; echo $$ > "$lock_file") 2>/dev/null; then
+            echo "Acquired dataset generation lock"
+            return 0
+        fi
+        
+        echo "Waiting for dataset generation lock... (${elapsed}s/${timeout}s)"
+        sleep $wait_interval
+        elapsed=$((elapsed + wait_interval))
+    done
+    
+    echo "ERROR: Timeout waiting for dataset generation lock"
+    return 1
+}
+
+release_dataset_lock() {
+    local lock_file="$1"
+    if [ -f "$lock_file" ]; then
+        rm -f "$lock_file"
+        echo "Released dataset generation lock"
+    fi
+}
+
+# === Safe Dataset Generation ===
+generate_standard_dataset() {
+    # Use the exported configuration from setup_standard_dataset
+    if [ -z "$DATASET_CONFIG_STR" ]; then
+        echo "ERROR: No dataset configuration found. Call setup_standard_dataset first."
+        return 1
+    fi
+    
+    parse_dataset_config "$DATASET_CONFIG_STR"
+    
+    local dataset_dir="$STANDARD_DATASET_DIR"
+    local lock_file="${dataset_dir}/.generation_lock"
+    local marker_file="${dataset_dir}/seqs/.generation_complete"
+    
+    # Check if dataset already exists
+    if [ -f "$marker_file" ]; then
+        echo "Standard dataset already exists and is complete"
+        return 0
+    fi
+    
+    # Acquire lock for dataset generation
+    if acquire_dataset_lock "$lock_file"; then
+        # Double-check after acquiring lock
+        if [ -f "$marker_file" ]; then
+            echo "Standard dataset was generated by another process"
+            release_dataset_lock "$lock_file"
+            return 0
+        fi
+        
+        echo "Generating standard dataset..."
+        echo "Configuration: domain_config=${DATASET_CONFIG_domain_config}, domain_id=${DATASET_CONFIG_domain_id}"
+        echo "               train_steps=${DATASET_CONFIG_train_steps}, val_steps=${DATASET_CONFIG_val_steps}"
+        echo "               multiple_domains=${DATASET_CONFIG_multiple_domains}, use_custom_domains=${DATASET_CONFIG_use_custom_domains}"
+        if [ -n "$DATASET_CONFIG_train_domains" ]; then
+            echo "               train_domains=${DATASET_CONFIG_train_domains}, val_domains=${DATASET_CONFIG_val_domains}"
+        fi
+        
+        mkdir -p "${dataset_dir}/seqs"
+        
+        # Generate the dataset with appropriate script and arguments
+        if [ "$DATASET_CONFIG_use_custom_domains" = "true" ]; then
+            # Use custom domain script
+            python ${BASE_PATH}/synthetic_data_generation/generate_data_custom_domains.py \
+                --run $DATASET_CONFIG_run_number \
+                --num_steps_train=$DATASET_CONFIG_train_steps \
+                --num_steps_val=$DATASET_CONFIG_val_steps \
+                --no_overwrite \
+                --config_file "$DATASET_CONFIG_domain_config" \
+                --train_domains $DATASET_CONFIG_train_domains \
+                --val_domains $DATASET_CONFIG_val_domains
+        elif [ "$DATASET_CONFIG_multiple_domains" = "true" ]; then
+            # Use standard multi-domain generation
+            python ${BASE_PATH}/synthetic_data_generation/generate_data.py \
+                --run $DATASET_CONFIG_run_number \
+                --num_steps_train=$DATASET_CONFIG_train_steps \
+                --num_steps_val=$DATASET_CONFIG_val_steps \
+                --no_overwrite \
+                --config_file "$DATASET_CONFIG_domain_config" \
+                --multiple_domains
+        else
+            # Use single domain generation
+            python ${BASE_PATH}/synthetic_data_generation/generate_data.py \
+                --run $DATASET_CONFIG_run_number \
+                --domain_id $DATASET_CONFIG_domain_id \
+                --num_steps_train=$DATASET_CONFIG_train_steps \
+                --num_steps_val=$DATASET_CONFIG_val_steps \
+                --no_overwrite \
+                --config_file "$DATASET_CONFIG_domain_config"
+        fi
+        
+        # Mark generation as complete
+        if [ $? -eq 0 ]; then
+            touch "$marker_file"
+            echo "Standard dataset generation completed successfully"
+        else
+            echo "ERROR: Standard dataset generation failed"
+            release_dataset_lock "$lock_file"
+            return 1
+        fi
+        
+        release_dataset_lock "$lock_file"
+        return 0
+    else
+        echo "ERROR: Could not acquire lock for dataset generation"
+        return 1
+    fi
 }
 
 # === GPU Management ===

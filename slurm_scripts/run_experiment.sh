@@ -27,10 +27,21 @@ EMBD_DIM=${7:-64}
 BATCH_SIZE=${8:-256}
 DOMAIN_CONFIG=${9:-"domains.ini"}
 DOMAIN_ID=${10:-"B"}
+USE_STANDARD_DATASET=${11:-"false"}
 
 export DOMAIN_ID=$DOMAIN_ID
 export DOMAIN_CONFIG=$DOMAIN_CONFIG
 export EXPERIMENT_TYPE="basic"
+
+# Setup standard dataset if requested
+setup_standard_dataset \
+    --use-standard-dataset "$USE_STANDARD_DATASET" \
+    --domain-config "$DOMAIN_CONFIG" \
+    --domain-id "$DOMAIN_ID" \
+    --multiple-domains "false" \
+    --train-steps "$TRAIN_STEPS" \
+    --val-steps "1000000" \
+    --run-number "$RUN_NUMBER"
 
 # Export run number
 export RUN_NUMBER
@@ -38,14 +49,17 @@ echo "Using run number: $RUN_NUMBER"
 
 # Data generation and basic evaluation
 print_section_header "Data Generation"
-python ${BASE_PATH}/synthetic_data_generation/generate_data.py \
-    --run $RUN_NUMBER \
-    --domain_id $DOMAIN_ID \
-    --num_steps_val=1_000_000 \
-    --no_overwrite \
-    --num_steps_train=$TRAIN_STEPS \
-    --config_file "$DOMAIN_CONFIG" \
-    --multiple_domains
+if [ "$USE_STANDARD_DATASET" = "true" ]; then
+    generate_standard_dataset
+else
+    python ${BASE_PATH}/synthetic_data_generation/generate_data.py \
+        --run $RUN_NUMBER \
+        --domain_id $DOMAIN_ID \
+        --num_steps_train=$TRAIN_STEPS \
+        --num_steps_val=1_000_000 \
+        --no_overwrite \
+        --config_file "$DOMAIN_CONFIG" \
+fi
 python ${BASE_PATH}/evaluation/basic_evaluation.py --run $RUN_NUMBER
 python ${BASE_PATH}/evaluation/graphs_on_trial_block_transitions.py --run $RUN_NUMBER
 

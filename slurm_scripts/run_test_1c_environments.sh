@@ -28,21 +28,39 @@ CONTEXT_LENGTH=${6:-12}
 EMBD_DIM=${7:-64}
 BATCH_SIZE=${8:-256}
 DOMAIN_CONFIG=${9:-"vary_environment_domains.ini"}
+USE_STANDARD_DATASET=${10:-"false"}
+
+# Setup standard dataset if requested
+setup_standard_dataset \
+    --use-standard-dataset "$USE_STANDARD_DATASET" \
+    --domain-config "$DOMAIN_CONFIG" \
+    --domain-id "default" \
+    --multiple-domains "false" \
+    --train-steps "$TRAIN_STEPS" \
+    --val-steps "1000000" \
+    --run-number "$RUN_NUMBER" \
+    --train-domains "B C" \
+    --val-domains "A" \
+    --use-custom-domains "true"
 
 # Export run number
 export RUN_NUMBER
 echo "Using run number: $RUN_NUMBER"
 
 print_section_header "Data Generation"
-# Generate training data from domain B and validation from domains A and C
-python ${BASE_PATH}/synthetic_data_generation/generate_data_custom_domains.py \
-    --run $RUN_NUMBER \
-    --train_domains B C \
-    --val_domains A \
-    --num_steps_train=100_000 \
-    --num_steps_val=1_000_000 \
-    --no_overwrite \
-    --config_file $DOMAIN_CONFIG
+if [ "$USE_STANDARD_DATASET" = "true" ]; then
+    generate_standard_dataset
+else
+    # Generate training data from domain B and validation from domains A and C
+    python ${BASE_PATH}/synthetic_data_generation/generate_data_custom_domains.py \
+        --run $RUN_NUMBER \
+        --train_domains B C \
+        --val_domains A \
+        --num_steps_train=$TRAIN_STEPS \
+        --num_steps_val=1_000_000 \
+        --no_overwrite \
+        --config_file $DOMAIN_CONFIG
+fi
 
 # python ${BASE_PATH}/synthetic_data_generation/generate_data.py \
 #     --run $RUN_NUMBER \
