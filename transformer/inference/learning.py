@@ -4,8 +4,6 @@ import sys
 import numpy as np
 import pandas as pd
 
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../../')))
-
 import utils.file_management as fm
 from evaluation.graph_helper import calc_bpos_behavior, plot_bpos_behavior
 
@@ -14,7 +12,7 @@ from bh.visualization import plot_trials as pts
 
 from utils.parse_data import (add_sequence_columns, get_data_filenames,
                               parse_simulated_data)
-
+from utils.model_utils import parse_model_info
 
 def initialize_logger(run):
     global logger
@@ -25,7 +23,7 @@ def load_predictions(run=None, model_name=None):
     """Load and process all prediction files for a run efficiently."""
 
     # Get model info from metadata.
-    model_info = fm.parse_model_info(run, model_name=model_name)
+    model_info = parse_model_info(run, model_name=model_name)
     if model_name is not None:
         assert model_info['model_name'] == model_name, 'did not recover correct model'
     model_name = model_info['model_name']

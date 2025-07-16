@@ -1,7 +1,6 @@
 import os
 import sys
 
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../../')))
 import torch
 from transformer.transformer import GPT, GPTConfig
 from pattern import introduce_pattern, read_sequence, write_sequence
@@ -24,6 +23,7 @@ def create_patterns(pattern_lengths=[11, 15]):
 
 def load_model_directly(model_path, device):
     """Load model directly from path without metadata checks"""
+    # Deprecated: Use utils.model_utils.load_trained_model instead
     state_dict = torch.load(model_path, map_location=device)
     
     model = GPT(GPTConfig(

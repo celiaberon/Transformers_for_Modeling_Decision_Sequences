@@ -10,7 +10,6 @@ import torch.nn.functional as F
 from sklearn.decomposition import PCA
 from sklearn.metrics.pairwise import cosine_similarity
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import utils.file_management as fm
 import utils.parse_data as parse
 from utils.checkpoint_processing import (add_checkpoint_colorbar,

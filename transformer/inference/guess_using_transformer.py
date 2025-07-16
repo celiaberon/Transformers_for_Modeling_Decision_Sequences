@@ -5,13 +5,11 @@ import time
 
 import torch
 
-# Add the project root directory to Python path
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../../')))
 from torch.nn import functional as F
 
 import utils.file_management as fm
 from transformer.transformer import DataLoader
-from utils.parse_data import load_trained_model
+from utils.model_utils import load_trained_model
 
 seed = 200
 random.seed(seed)

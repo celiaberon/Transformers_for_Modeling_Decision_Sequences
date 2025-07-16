@@ -8,8 +8,6 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import sys
 
-# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../transformer/')))
-print(sys.path)
 import utils.file_management as fm
 from transformer.transformer import GPTConfig
 

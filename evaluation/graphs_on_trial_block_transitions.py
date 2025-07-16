@@ -1,8 +1,6 @@
 import os
 import sys
 
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../')))
-
 import utils.file_management as fm
 from evaluation.graph_helper import (calc_bpos_behavior, plot_bpos_behavior,
                                      plot_conditional_switching)

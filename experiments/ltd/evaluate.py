@@ -80,6 +80,4 @@ def main():
             print(f"{key}: Pattern Accuracy = {result['pattern_accuracy']:.4f}")
 
 if __name__ == "__main__":
-    # Add project root to Python path
-    sys.path.append(os.path.abspath(os.path.join(__file__, '../../')))
     main() 

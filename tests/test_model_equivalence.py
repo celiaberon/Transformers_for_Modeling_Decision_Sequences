@@ -5,9 +5,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-# Add parent directory to path for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from transformer.alt_transformer import LastTokenGPT
 from transformer.transformer import GPT, GPTConfig
 

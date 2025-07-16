@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import utils.file_management as fm
 from transformer import GPT
 

@@ -16,10 +16,8 @@ import torch.nn.functional as F
 from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from transformer import GPT, DataLoader, DDPConfig, GPTConfig
-from alt_transformer import GPT_noLN
+from transformer import DataLoader, DDPConfig, GPTConfig
 
-# sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import utils.file_management as fm
 from utils.model_utils import select_model, save_model
 

@@ -7,7 +7,6 @@ import pandas as pd
 import seaborn as sns
 
 from typing import Dict, List, Optional, Union
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../../')))
 
 import utils.file_management as fm
 from evaluate_transformer_guess import compute_confusion_matrix

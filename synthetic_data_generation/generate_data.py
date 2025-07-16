@@ -10,8 +10,6 @@ import numpy as np
 from agent import RFLR_mouse
 from environment import Original_2ABT_Spouts
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import utils.file_management as fm
 from pprint import pformat
 

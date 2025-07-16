@@ -7,8 +7,6 @@ import numpy as np
 import seaborn as sns
 from scipy.stats import bootstrap
 
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../')))
-
 from utils.file_management import get_experiment_file
 
 sys.path.append(os.path.abspath(os.path.join(__file__, '../../../behavior-helpers/')))

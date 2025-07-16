@@ -8,7 +8,6 @@ import pandas as pd
 import seaborn as sns
 import torch
 
-# Add parent directory to path for imports
 sys.path.append(os.path.abspath('../'))
 
 # Local imports
@@ -19,6 +18,7 @@ from feature_attribution import AttributionAnalyzer
 import evaluation.inspect_data as inspect
 import utils.file_management as fm
 import utils.parse_data as parse
+import utils.model_utils as model_utils
 from interpretability.activations import EmbeddingAnalyzer, MLPAnalyzer
 from interpretability.analyzer import DimensionalityReductionConfig
 from interpretability.attention_helpers import AttentionAnalyzer
@@ -92,7 +92,7 @@ def load_model_and_config(
     """
     run = run or fm.get_latest_run()
     initialize_logger(run)
-    model, model_info, config = parse.load_trained_model(
+    model, model_info, config = model_utils.load_trained_model(
         run,
         model_name=model_name,
         device=device,
