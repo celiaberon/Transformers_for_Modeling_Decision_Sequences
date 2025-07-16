@@ -16,8 +16,6 @@ from interp_helpers import embed_sequence, pca_embeddings
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
-# Import GPT model
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from transformer.transformer import GPT
 
 

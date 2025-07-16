@@ -251,6 +251,19 @@ class ActivationAnalyzer(BaseAnalyzer):
             for layer_name in self.layers
         }
 
+    def get_activations_by_block(
+        self,
+        activations: dict[str, dict[str, np.ndarray]],
+        block_idx: int
+    ) -> dict[str, dict[str, np.ndarray]]:
+        """Extract activations for a specific block."""
+        block_activations = {}
+        for layer_block, acts in activations.items():
+            layer, block = layer_block.split('_')
+            if int(block) == block_idx:
+                block_activations[layer] = acts
+        return block_activations
+
     def find_maximal_activations(
         self,
         activations: dict[str, dict[str, np.ndarray]],
@@ -271,10 +284,8 @@ class ActivationAnalyzer(BaseAnalyzer):
         """
         # Get activations for this layer
         layer_acts = activations[layer_name]
-        # layer_acts = {
-        #     seq: acts[layer_name]
-        #     for seq, acts in activations.items()
-        # }
+
+        layer_name = layer_name.split('_')[0]
         num_neurons = self.layer_composition[layer_name]
 
         max_activating_seqs = {}

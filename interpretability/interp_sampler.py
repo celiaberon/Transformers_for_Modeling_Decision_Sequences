@@ -2,19 +2,18 @@ import os
 import sys
 from typing import Dict, List, Optional, Tuple
 
+import interp_helpers as interp
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
-
-import interp_helpers as interp
 from feature_attribution import AttributionAnalyzer
 
 import evaluation.inspect_data as inspect
 import utils.file_management as fm
-import utils.parse_data as parse
 import utils.model_utils as model_utils
+import utils.parse_data as parse
 from interpretability.activations import EmbeddingAnalyzer, MLPAnalyzer
 from interpretability.analyzer import DimensionalityReductionConfig
 from interpretability.attention_helpers import AttentionAnalyzer
@@ -362,7 +361,7 @@ def analyze_mlp_dimensionality(
     mlp_analyzer = MLPAnalyzer(model, model.config)
     
     # Use the first layer's components for analysis (layer 0)
-    mlp_components = ['input_0', 'gelu_0', 'output_0']
+    mlp_components = mlp_analyzer.layers
     
     for i, seq in test_sequences.items():
         dr_config = DimensionalityReductionConfig(
@@ -554,36 +553,31 @@ def analyze_maximal_activations(
     )
     
     mlp_max_activations = {}
-    fig, axes_dict = mlp_analyzer.visualizer.create_mlp_visualization()
-    
-    for layer_name, axes in axes_dict.items():
+    for layer_name in mlp_analyzer.layers:
         mlp_max_activations[layer_name] = mlp_analyzer.find_maximal_activations(
             mlp_last_pos_by_layer, layer_name, sequences
         )
-        
-        for neuron_idx, ax in enumerate(axes):
-            ax, token_counts = mlp_analyzer.analyze_neuron_patterns(
-                mlp_max_activations, layer_name, neuron_idx,
-                ax=ax, cbar=neuron_idx == (len(axes)-1)
-            )
-            avg_sequence = mlp_analyzer.get_average_sequence(
-                token_counts, single_threshold=0, joint_threshold=0
-            )
-            avg_sequence_thresholded = mlp_analyzer.get_average_sequence(
-                token_counts, single_threshold=0.6, joint_threshold=0.4
-            )
-            ax.set(
-                title=f"Neuron {neuron_idx+1}\n{avg_sequence}\n{avg_sequence_thresholded}",
-                xticks=[]
-            )
-            ax.set_aspect(1)
-            if neuron_idx > 0:
-                ax.set(ylabel='', yticks=[])
-            ax.set(xlabel='')
-    
-    fig_path = fm.get_experiment_file('mlp_max_activations.png', run, subdir='interp')
-    fig.savefig(fig_path, bbox_inches='tight')
-    plt.close()
+
+    for block in range(model.config.n_layer):
+        mlp_max_activations_single_block = mlp_analyzer.get_activations_by_block(mlp_max_activations, block_idx=block)
+
+        fig, axes_dict = mlp_analyzer.visualizer.create_mlp_visualization()
+
+        for layer_name, axes in axes_dict.items():
+
+            for neuron_idx, ax in enumerate(axes):
+                ax, token_counts = mlp_analyzer.analyze_neuron_patterns(mlp_max_activations_single_block, layer_name, neuron_idx, ax=ax, cbar=neuron_idx == (len(axes)-1))
+                avg_sequence = mlp_analyzer.get_average_sequence(token_counts, single_threshold=0, joint_threshold=0)
+                avg_sequence_thresholded = mlp_analyzer.get_average_sequence(token_counts, single_threshold=0.6, joint_threshold=0.4)
+                ax.set(title=f"Neuron {neuron_idx+1}\n{avg_sequence}\n{avg_sequence_thresholded}", xticks=[])
+                ax.set_aspect(1)
+                if neuron_idx > 0:
+                    ax.set(ylabel='', yticks=[])
+                ax.set(xlabel='')
+
+        fig_path = fm.get_experiment_file(f'mlp_max_activations_block_{block}.png', run, subdir='interp')
+        fig.savefig(fig_path, bbox_inches='tight')
+        plt.close()
     
     # Embedding analysis
     embedding_analyzer = EmbeddingAnalyzer(model, model.config)
