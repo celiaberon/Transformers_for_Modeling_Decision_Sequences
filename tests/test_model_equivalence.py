@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from transformer.alt_transformer import LastTokenGPT
+from transformer.last_token_gpt import LastTokenGPT
 from transformer.transformer import GPT, GPTConfig
 
 

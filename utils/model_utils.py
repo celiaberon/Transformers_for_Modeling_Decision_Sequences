@@ -2,14 +2,12 @@
 Model utility functions for selecting and managing different model types.
 """
 
-import os
 import torch
-import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
-import sys
 
 import utils.file_management as fm
 from transformer.transformer import GPTConfig
+
 
 def select_model(model_type):
     """
@@ -28,10 +26,10 @@ def select_model(model_type):
         from transformer import GPT
         return GPT
     elif model_type == 'GPT_noLN':
-        from alt_transformer import GPT_noLN
+        from transformer import GPT_noLN
         return GPT_noLN
     elif model_type == 'LastTokenGPT':
-        from alt_transformer import LastTokenGPT
+        from transformer import LastTokenGPT
         return LastTokenGPT
     else:
         raise ValueError(f"Invalid model type: {model_type}. "
