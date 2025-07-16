@@ -7,7 +7,6 @@ import pandas as pd
 import utils.file_management as fm
 from evaluation.graph_helper import calc_bpos_behavior, plot_bpos_behavior
 
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../../../behavior-helpers/')))
 from bh.visualization import plot_trials as pts
 
 from utils.parse_data import (add_sequence_columns, get_data_filenames,

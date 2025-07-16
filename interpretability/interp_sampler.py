@@ -8,10 +8,6 @@ import pandas as pd
 import seaborn as sns
 import torch
 
-sys.path.append(os.path.abspath('../'))
-
-# Local imports
-
 import interp_helpers as interp
 from feature_attribution import AttributionAnalyzer
 
@@ -354,48 +350,20 @@ def analyze_mlp_dimensionality(
     run: int,
     test_sequences: Dict[str, List[str]]
 ) -> None:
-    """Analyze MLP dimensionality reduction.
+    """Analyze MLP dimensionality using PCA.
     
     Args:
         model: Model to analyze
         sequences: List of sequences to analyze
-        counts: List of sequence counts
+        counts: List of counts for each sequence
         run: Run number
         test_sequences: Dictionary of test sequences to analyze
     """
     mlp_analyzer = MLPAnalyzer(model, model.config)
     
-    # Analyze overall sequences
-    dr_config = DimensionalityReductionConfig(
-        token_pos=-1,
-        sequence_method='token',
-        n_components=4
-    )
+    # Use the first layer's components for analysis (layer 0)
+    mlp_components = ['input_0', 'gelu_0', 'output_0']
     
-    for sm in ['token', 'concat']:
-        dr_config.sequence_method = sm
-        fig, axs = mlp_analyzer.visualizer.plot_pca_by_layer(
-            sequences, dr_config, counts=counts
-        )
-        fig_path = fm.get_experiment_file(
-            f'mlp_pca_{sm}.png', run, subdir='interp'
-        )
-        fig.savefig(fig_path, bbox_inches='tight')
-        plt.close()
-    
-    dr_config.method = 'tsne'
-    for sm in ['token', 'concat']:
-        dr_config.sequence_method = sm
-        fig, axs = mlp_analyzer.visualizer.plot_pca_by_layer(
-            sequences, dr_config, counts=counts, variance_explained=False
-        )
-        fig_path = fm.get_experiment_file(
-            f'mlp_tsne_{sm}.png', run, subdir='interp'
-        )
-        fig.savefig(fig_path, bbox_inches='tight')
-        plt.close()
-
-    # Analyze test sequences
     for i, seq in test_sequences.items():
         dr_config = DimensionalityReductionConfig(
             token_pos=-1,
@@ -404,7 +372,7 @@ def analyze_mlp_dimensionality(
             method='pca'
         )
         fig, axs = mlp_analyzer.visualizer.plot_pca_across_trials(
-            sequences, seq, ['input', 'gelu', 'output'], dr_config
+            sequences, seq, mlp_components, dr_config
         )
         fig_path = fm.get_experiment_file(
             f'mlp_pca_last_token.png', run, subdir=f'interp/bt_{i}'
@@ -419,7 +387,7 @@ def analyze_mlp_dimensionality(
             method='pca'
         )
         fig, axs = mlp_analyzer.visualizer.plot_pca_across_trials(
-            sequences, seq, ['input', 'gelu', 'output'], dr_config
+            sequences, seq, mlp_components, dr_config
         )
         fig_path = fm.get_experiment_file(
             f'mlp_pca_concat.png', run, subdir=f'interp/bt_{i}'
@@ -444,7 +412,7 @@ def analyze_test_sequences(
     """
     embedding_analyzer = EmbeddingAnalyzer(model, model.config)
     attention_analyzer = AttentionAnalyzer(model, model.config)
-    attribution_analyzer = AttributionAnalyzer(model, method='inputs')
+    attribution_analyzer = AttributionAnalyzer(model, model.config, method='inputs')
     
     for i, seq in test_sequences.items():
         # Embedding analysis
@@ -493,7 +461,7 @@ def analyze_test_sequences(
         plt.close()
 
         # Attention analysis
-        fig = attention_analyzer.plot_attention_multiple_sequences(
+        fig = attention_analyzer.visualizer.plot_attention_multiple_sequences(
             seq_, max_sequences=10
         )
         fig_path = fm.get_experiment_file(
@@ -502,7 +470,7 @@ def analyze_test_sequences(
         fig.savefig(fig_path, bbox_inches='tight')
         plt.close()
         
-        fig = attention_analyzer.plot_attention_multiple_sequences(
+        fig = attention_analyzer.visualizer.plot_attention_multiple_sequences(
             seq_[1:],
             max_sequences=10,
             as_diff=True,
@@ -519,7 +487,7 @@ def analyze_test_sequences(
             sequence_method='token',
             n_components=2
         )
-        fig = attention_analyzer.plot_attention_features(
+        fig = attention_analyzer.visualizer.plot_attention_features(
             sequences, seq, dr_config
         )
         fig_path = fm.get_experiment_file(

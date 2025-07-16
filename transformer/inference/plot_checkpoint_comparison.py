@@ -17,7 +17,6 @@ from utils.checkpoint_processing import (add_checkpoint_colorbar,
 from utils.parse_data import (align_predictions_with_gt, get_data_filenames,
                               parse_simulated_data)
 
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../../../behavior-helpers/')))
 from bh.visualization import plot_trials as pts
 
 def plot_confusion_matrix_with_bars(

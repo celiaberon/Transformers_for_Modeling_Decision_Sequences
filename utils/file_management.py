@@ -138,6 +138,9 @@ def get_experiment_file(filename_template, run=None, suffix='tr', subdir=None):
             else:
                 # Fallback for other templates
                 filename = filename_template.format(f"{dataset_identifier}_{suffix}")
+    elif use_standard and standard_dataset_dir and filename_template.startswith('metadata'):
+        filename = f'metadata_{dataset_identifier}.txt'
+        target_dir = standard_dataset_dir
     else:
         # Use regular run directory
         run_dir = get_run_dir(run)
@@ -180,22 +183,7 @@ def get_domain_params(run=None, domain_id=None, suffix='tr'):
     """
     Get the parameters for a specific domain.
     """
-    # Check if we're using standard dataset
-    use_standard = (os.environ.get('USE_STANDARD_DATASET', 'false').lower() == 'true')
-    
-    if use_standard:
-        # For standard datasets, look for metadata in the shared dataset directory
-        standard_dataset_dir = os.environ.get('STANDARD_DATASET_DIR')
-        dataset_identifier = os.environ.get('DATASET_IDENTIFIER', 'default')
-        
-        if standard_dataset_dir and dataset_identifier:
-            metadata_file = os.path.join(standard_dataset_dir, f"metadata_{dataset_identifier}.txt")
-        else:
-            # Fallback to regular metadata file
-            metadata_file = get_experiment_file("metadata.txt", run)
-    else:
-        # Regular dataset - use metadata.txt in run directory
-        metadata_file = get_experiment_file("metadata.txt", run)
+    metadata_file = get_experiment_file("metadata.txt", run)
 
     with open(metadata_file, 'r') as f:
         data_section = None
@@ -212,6 +200,8 @@ def get_domain_params(run=None, domain_id=None, suffix='tr'):
                 if (current_section == 'agent_params') & (domain_id is domain):
                     params = line
                     return domain, eval(params)
+                elif (current_section == 'agent_params') & (domain_id is not domain):
+                    current_section = 'domain_id'
                 if line.startswith("Task parameters:"):
                     current_section = 'domain_id'
                 if line.startswith("Agent parameters:"):

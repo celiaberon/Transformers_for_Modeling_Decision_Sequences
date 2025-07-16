@@ -2,19 +2,34 @@ source "./slurm_scripts/common_functions.sh"
 setup_environment
 
 # Parameters for experiment sweeps (or single)
-LAYERS_ARRAY=(1)
-HEADS_ARRAY=(1)
-EPOCHS_ARRAY=(100)
-TRAIN_STEPS_ARRAY=(100000)
-CONTEXT_LENGTH_ARRAY=(6)
-EMBD_DIM_ARRAY=(4)
-BATCH_SIZE_ARRAY=(256)
-DOMAIN_CONFIG_ARRAY=("three_domains.ini")
-DOMAIN_ID_ARRAY=("A" "B") # "C" "B_not_sticky")
+LAYERS_ARRAY=(1 2 4 8)
+HEADS_ARRAY=(1 2 4 8)
+EPOCHS_ARRAY=(100 200 400)
+TRAIN_STEPS_ARRAY=(100000 200000 400000)
+CONTEXT_LENGTH_ARRAY=(6 12 24 48)
+EMBD_DIM_ARRAY=(4 8 16 32)
+BATCH_SIZE_ARRAY=(256 512)
+DOMAIN_CONFIG_ARRAY=("domains.ini")
+DOMAIN_ID_ARRAY=("A" "C") # "B" "C" "B_not_sticky")
 EXPERIMENT_TYPE="comparison"  # define the experiment you are running
 export EXPERIMENT_TYPE  # Export immediately so it's available to all functions
 USE_STANDARD_DATASET=true  # Standard dataset flag - when true, uses a shared dataset for all runs
 DEBUG_MODE=false  # Debug mode flag - when true, prevents writing to model_summary.csv
+
+# Parameters for experiment sweeps (or single)
+# LAYERS_ARRAY=(1)
+# HEADS_ARRAY=(1)
+# EPOCHS_ARRAY=(100)
+# TRAIN_STEPS_ARRAY=(100000)
+# CONTEXT_LENGTH_ARRAY=(6)
+# EMBD_DIM_ARRAY=(4)
+# BATCH_SIZE_ARRAY=(256)
+# DOMAIN_CONFIG_ARRAY=("three_domains.ini")
+# DOMAIN_ID_ARRAY=("A" "B" "C" "B_not_sticky")
+# EXPERIMENT_TYPE="basic"  # define the experiment you are running
+# export EXPERIMENT_TYPE  # Export immediately so it's available to all functions
+# USE_STANDARD_DATASET=false  # Standard dataset flag - when true, uses a shared dataset for all runs
+# DEBUG_MODE=false  # Debug mode flag - when true, prevents writing to model_summary.csv
 
 # Options are:
 #   "basic": run_experiment.sh
@@ -48,7 +63,7 @@ if [ "$EXPERIMENT_TYPE" = "comparison" ]; then
 fi
 
 # At the top of your script
-MAX_CONCURRENT_JOBS=12
+MAX_CONCURRENT_JOBS=11
 # Function to count currently running/pending jobs
 count_running_jobs() {
     local username=$(whoami)
@@ -60,10 +75,13 @@ count_running_jobs() {
 # Function to wait until jobs are below threshold
 wait_for_job_slot() {
     local max_jobs=$1
+    local jobs_remaining=$2  # Pass in jobs remaining to submit
     while true; do
         local current_jobs=$(count_running_jobs)
         echo "Currently running/pending jobs: $current_jobs (maximum: $max_jobs)"
-        
+        if [ "$jobs_remaining" != "" ]; then
+            echo "Jobs remaining to submit: $jobs_remaining"
+        fi
         if [ "$current_jobs" -lt "$max_jobs" ]; then
             echo "Job slot available, proceeding with submission"
             break
@@ -210,8 +228,20 @@ for layers in "${LAYERS_ARRAY[@]}"; do
                             for domain_config in "${DOMAIN_CONFIG_ARRAY[@]}"; do
                                 for domain_id in "${DOMAIN_ID_ARRAY[@]}"; do
                                     experiment_name="l${layers}_h${heads}_e${epochs}_c${context_length}_d${embd_dim}"
+                                    # Calculate jobs remaining
+                                    jobs_remaining=$(( (
+                                        ${#LAYERS_ARRAY[@]} * 
+                                        ${#HEADS_ARRAY[@]} * 
+                                        ${#EPOCHS_ARRAY[@]} * 
+                                        ${#TRAIN_STEPS_ARRAY[@]} * 
+                                        ${#CONTEXT_LENGTH_ARRAY[@]} * 
+                                        ${#EMBD_DIM_ARRAY[@]} * 
+                                        ${#BATCH_SIZE_ARRAY[@]} * 
+                                        ${#DOMAIN_CONFIG_ARRAY[@]} * 
+                                        ${#DOMAIN_ID_ARRAY[@]} 
+                                    ) - (NEXT_RUN_NUMBER - RUN_NUMBER) ))
                                     if [ $CURRENT_JOB_COUNT -ge $MAX_CONCURRENT_JOBS ]; then
-                                        wait_for_job_slot $MAX_CONCURRENT_JOBS
+                                        wait_for_job_slot $MAX_CONCURRENT_JOBS $jobs_remaining
                                         # Reset counter when we've waited
                                         CURRENT_JOB_COUNT=$(count_running_jobs)
                                     fi

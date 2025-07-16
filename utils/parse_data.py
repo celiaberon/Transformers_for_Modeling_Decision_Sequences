@@ -115,12 +115,24 @@ def parse_passive_estimator(run, events, suffix='tr'):
     domains = events.domain.unique()
     params = {}
     for domain in domains:
-        params[domain] = fm.get_domain_params(run=run, domain_id=domain, suffix=suffix)[1]
+        domain_params = fm.get_domain_params(run=run, domain_id=domain, suffix=suffix)
+        if domain_params is None:
+            print(f"WARNING: No parameters found for domain '{domain}' in run {run}, suffix '{suffix}'")
+            print(f"Available domains in data: {domains}")
+            print(f"Skipping passive estimator for domain '{domain}'")
+            continue
+        params[domain] = domain_params[1]
 
     for session in events.session.unique():
         session_mask = events.session == session
         session_events = events[session_mask]
         domain_id = session_events.domain.unique().item()
+        
+        # Skip if we don't have parameters for this domain
+        if domain_id not in params:
+            print(f"WARNING: No parameters available for domain '{domain_id}' in session {session}")
+            continue
+            
         domain_params = params[domain_id]
         agent = RFLR_mouse(**domain_params)
         

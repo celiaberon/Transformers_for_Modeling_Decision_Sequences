@@ -9,7 +9,6 @@ from scipy.stats import bootstrap
 
 from utils.file_management import get_experiment_file
 
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../../behavior-helpers/')))
 from bh.visualization import plot_trials as pts
 
 sns.set_theme(style='ticks', font_scale=1.0, rc={'axes.labelsize': 12,
