@@ -6,7 +6,7 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --gres=gpu:1          
 #SBATCH --cpus-per-task=16
-#SBATCH --time=01:00:00  
+#SBATCH --time=00:30:00  
 #SBATCH --mem=150GB
 #SBATCH --partition=kempner_requeue
 
@@ -43,7 +43,7 @@ setup_standard_dataset \
     --comparison-dir "$COMPARISON_DIR" \
     --domain-config "$DOMAIN_CONFIG" \
     --domain-id "$DOMAIN_ID" \
-    --multiple-domains "true" \
+    --multiple-domains "false" \
     --train-steps "$TRAIN_STEPS" \
     --val-steps "1000000" \
     --run-number "$RUN_NUMBER"
@@ -64,7 +64,7 @@ else
         --num_steps_val=1_000_000 \
         --no_overwrite \
         --config_file "$DOMAIN_CONFIG" \
-        --multiple_domains
+        # --multiple_domains
     
     # Run evaluation for individual datasets
     python ${BASE_PATH}/evaluation/basic_evaluation.py --run $RUN_NUMBER

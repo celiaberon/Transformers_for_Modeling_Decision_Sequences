@@ -109,7 +109,7 @@ LEARNING_COMMANDS=(
 )
 
 # Run learning commands (will run sequentially if only 1 GPU)
-run_on_gpus "${LEARNING_COMMANDS[@]}"
+# run_on_gpus "${LEARNING_COMMANDS[@]}"
 
 print_section_header "Interpretability"
 python ${BASE_PATH}/interpretability/interp_sampler.py --run $RUN_NUMBER

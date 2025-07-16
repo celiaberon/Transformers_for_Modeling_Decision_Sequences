@@ -10,11 +10,11 @@ CONTEXT_LENGTH_ARRAY=(6)
 EMBD_DIM_ARRAY=(4)
 BATCH_SIZE_ARRAY=(256)
 DOMAIN_CONFIG_ARRAY=("three_domains.ini")
-DOMAIN_ID_ARRAY=("A") # "B" "C" "B_not_sticky")
-EXPERIMENT_TYPE="layer_norm"  # define the experiment you are running
+DOMAIN_ID_ARRAY=("A" "B") # "C" "B_not_sticky")
+EXPERIMENT_TYPE="comparison"  # define the experiment you are running
 export EXPERIMENT_TYPE  # Export immediately so it's available to all functions
 USE_STANDARD_DATASET=true  # Standard dataset flag - when true, uses a shared dataset for all runs
-DEBUG_MODE=true  # Debug mode flag - when true, prevents writing to model_summary.csv
+DEBUG_MODE=false  # Debug mode flag - when true, prevents writing to model_summary.csv
 
 # Options are:
 #   "basic": run_experiment.sh

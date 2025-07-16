@@ -197,7 +197,7 @@ setup_standard_dataset() {
         
         # Use a single shared datasets folder for all standard datasets
         if [ -n "$DATASET_CONFIG_comparison_dir" ]; then
-            # For comparison experiments, use shared datasets folder in comparison directory
+            # For comparison experiments, use shared datasets folder in comparison directory"
             STANDARD_DATASET_DIR="${DATASET_CONFIG_comparison_dir}/shared_datasets"
         else
             # For non-comparison experiments, use shared datasets folder within experiment type
@@ -224,16 +224,22 @@ copy_metadata_to_shared() {
     local dataset_dir=$2
     local dataset_identifier=$3
     
-    # Use experiment type to determine directory
-    local experiment_type=${EXPERIMENT_TYPE:-basic}
-    local run_dir="${BASE_PATH}/experiments/${experiment_type}/run_${run_number}"
+    # Use correct run directory for comparison experiments
+    local run_dir
+    if [ "$EXPERIMENT_TYPE" = "comparison" ] && [ -n "$COMPARISON_DIR" ]; then
+        run_dir="${COMPARISON_DIR}/run_${run_number}"
+    else
+        local experiment_type=${EXPERIMENT_TYPE:-basic}
+        run_dir="${BASE_PATH}/experiments/${experiment_type}/run_${run_number}"
+    fi
     
     # Copy metadata with identifier suffix
     if [ -f "${run_dir}/metadata.txt" ]; then
         cp "${run_dir}/metadata.txt" "${dataset_dir}/metadata_${dataset_identifier}.txt"
-        echo "Copied metadata: metadata_${dataset_identifier}.txt"
+        echo "Copied metadata: metadata_${dataset_identifier}.txt from ${run_dir}"
+    else
+        echo "No metadata.txt found in ${run_dir}"
     fi
-
 }
 
 copy_logs_to_shared() {
@@ -241,15 +247,22 @@ copy_logs_to_shared() {
     local dataset_dir=$2
     local dataset_identifier=$3
     
-    # Use experiment type to determine directory
-    local experiment_type=${EXPERIMENT_TYPE:-basic}
-    local run_dir="${BASE_PATH}/experiments/${experiment_type}/run_${run_number}"
+    # Use correct run directory for comparison experiments
+    local run_dir
+    if [ "$EXPERIMENT_TYPE" = "comparison" ] && [ -n "$COMPARISON_DIR" ]; then
+        run_dir="${COMPARISON_DIR}/run_${run_number}"
+    else
+        local experiment_type=${EXPERIMENT_TYPE:-basic}
+        run_dir="${BASE_PATH}/experiments/${experiment_type}/run_${run_number}"
+    fi
 
     # Copy data generation log with identifier suffix
     if [ -f "${run_dir}/logs/data_generation.log" ]; then
         mkdir -p "${dataset_dir}/logs"
         cp "${run_dir}/logs/data_generation.log" "${dataset_dir}/logs/data_generation_${dataset_identifier}.log"
-        echo "Copied data generation log: data_generation_${dataset_identifier}.log"
+        echo "Copied data generation log: data_generation_${dataset_identifier}.log from ${run_dir}/logs"
+    else
+        echo "No data_generation.log found in ${run_dir}/logs"
     fi
 }
 
