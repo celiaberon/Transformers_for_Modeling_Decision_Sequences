@@ -13,15 +13,16 @@ The main class `AttributionAnalyzer` provides a unified interface for all attrib
 """
 
 from contextlib import contextmanager
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import torch
 import torch.nn.functional as F
-from analyzer import BaseAnalyzer
 from matplotlib.lines import Line2D
+
+from interpretability.core.base import BaseAnalyzer
 
 sns.set_theme(
     style='ticks',
