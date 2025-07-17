@@ -1,16 +1,15 @@
-"""Helper functions for analyzing transformer model components."""
+"""AttentionVisualizer: plotting utilities for attention analysis and visualization."""
 
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from activations import EmbeddingAnalyzer
-from analyzer import BaseAnalyzer, BaseVisualizer
 from sklearn.decomposition import PCA
 
-import interpretability.interp_helpers as interp
+import interpretability.core.utils as interp
+from interpretability.core.base import BaseVisualizer
 
 
 class AttentionVisualizer(BaseVisualizer):
@@ -724,132 +723,3 @@ class AttentionVisualizer(BaseVisualizer):
         
         plt.tight_layout()
         return fig
-
-
-class AttentionAnalyzer(BaseAnalyzer):
-    """Analyzer for attention patterns in transformer models."""
-    
-    def __init__(self, model, model_config):
-        super().__init__(model, visualizer_class=AttentionVisualizer)
-        self.model_config = model_config
-        self.n_layers = model_config.n_layer
-        self.layers = [f'qk_{i}' for i in range(self.n_layers)]
-
-    def get_attention_maps(self, sequence: str, component='qk_attn_softmax') -> List[np.ndarray]:
-        """Get attention weights for each layer and head."""
-        
-        T = len(sequence)
-        assert T <= self.model.config.block_size, (
-            f"Sequence length {T} exceeds block size "
-            f"{self.model.config.block_size}"
-        )
-        # Use unified hook system to get QK attention weights
-        components = [f'{component}_{i}' for i in range(self.n_layers)]
-        states = self._extract_internal_states([sequence], components)
-        
-        # Convert to the expected format: List[np.ndarray] where each array is [1, n_heads, seq_len, seq_len]
-        attention_maps = []
-        for i in range(self.n_layers):
-            if f'{component}_{i}' in states:
-                attention_maps.append(states[f'{component}_{i}'])
-            else:
-                print(f'No attention map found for layer {i}')
-
-        return attention_maps
-
-    def get_activations(self, sequences: list[str], layer: str) -> np.ndarray:
-        raise NotImplementedError("Need to implement multi-sequence activation grabbing")
-        return self.get_attention_maps(sequences, layer)
-        
-    def diff_attention_from_reference(
-        self,
-        att_map: np.ndarray,
-        ref_seq: str = None,
-        **kwargs
-    ):
-        if ref_seq is None:
-            raise ValueError("Reference sequence must be provided")
-        ref_maps = self.get_attention_maps(ref_seq)
-        diff_maps = []
-        for layer_idx in range(self.n_layers):
-            # Create a new array with same shape as att_map[layer_idx]
-            layer_diff = np.zeros_like(att_map[layer_idx])
-            for head_idx in range(self.n_heads):
-                layer_diff[0, head_idx] = (
-                    att_map[layer_idx][0, head_idx] - 
-                    ref_maps[layer_idx][0, head_idx]
-                )
-            diff_maps.append(layer_diff)
-
-        return diff_maps
-    
-    def attention_factorization(
-        self,
-        sequence: str,
-        layer_idx: int = 0,
-        head_idx: int = 0,
-        nth_feature: int = 0,
-        component: str = 'qk_attn_softmax',
-        **kwargs
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Factorize attention patterns using SVD.
-        
-        Args:
-            sequence: Input sequence
-            layer_idx: Layer index
-            head_idx: Head index
-            k: Index of singular value to use
-            
-        Returns:
-            Tuple of (left features, right features) in PCA space
-        """
-        # Calculate A = QKT
-        A = self.get_attention_maps(sequence, component)[layer_idx][0, head_idx]
-        X = self.get_embeddings(sequence, flatten=False)
-
-        # Set upper diagonal (future tokens) to 0 (causal mask)
-        seq_len = A.shape[0]
-        mask = np.triu(np.ones((seq_len, seq_len)), k=1)
-        A = A.copy()  # Don't modify original
-        A[mask == 1] = 0.0
-        
-        # Center and scale each row
-        row_max = A.max(axis=-1, keepdims=True)
-        A_center = A - row_max  # like softmax does
-        row_std = A_center.std(axis=-1, keepdims=True)
-        row_std = np.maximum(row_std, 1e-4)  # clamp_min equivalent
-        A_norm = A_center / row_std
-        
-        # SVD(A) = USVT
-        U, S, V = np.linalg.svd(A_norm)
-        features_left = X.T @ U[:, nth_feature]
-        features_right = X.T @ V[nth_feature, :] 
-        
-        return features_left, S, features_right
-
-    def project_attention_features(self, block_sequence, pca=None, sequences=None, config=None, **kwargs):
-        if pca is None:
-            pca = self._get_embedding_pca(sequences, config)
-
-        V_pca = pca.components_
-
-        # Project each singular vector
-        f_proj_left = []
-        f_proj_right = []
-        for i in range(len(block_sequence)):
-            features_left, S, features_right = self.attention_factorization(
-                block_sequence,
-                nth_feature=i,
-                **kwargs
-            )
-            f_proj_left.append(V_pca @ features_left)
-            f_proj_right.append(V_pca @ features_right)
-
-        return f_proj_left, S, f_proj_right
-
-    def _get_embedding_pca(self, sequences, config):
-        embed_analyzer = EmbeddingAnalyzer(self.model, self.model_config)
-        pca, _, _ = embed_analyzer.compute_pca_embeddings(sequences, 'embed', config)
-        return pca
-
-    

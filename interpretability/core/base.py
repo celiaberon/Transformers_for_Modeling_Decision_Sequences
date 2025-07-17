@@ -14,6 +14,7 @@ from sklearn.manifold import TSNE
 
 from interpretability.core.config import (DimensionalityReductionConfig,
                                           InterpretabilityConfig)
+from interpretability.core.utils import embed_sequence, pca_embeddings
 from transformer.models import GPT
 
 
@@ -44,7 +45,9 @@ class HookManager:
         """
         if self.verbose:
             print(f"Setting up hooks for components: {components}")
-            
+        
+        self.activations.clear()  # Clear all previous activations
+        
         for component in components:
             self.activations[component] = []
             hook = self._register_component_hook(component, last_token_only=last_token_only)
@@ -74,34 +77,70 @@ class HookManager:
                 raise ValueError(f"Layer index {layer_idx} out of range")
             return self._register_layer_component_hook(component, layer_idx, last_token_only=last_token_only)
 
-    def _register_layer_component_hook(self, component: str, layer_idx: int, last_token_only: bool = False) -> torch.utils.hooks.RemovableHandle:
+    def _register_layer_component_hook(
+            self,
+            component: str,
+            layer_idx: int,
+            last_token_only: bool = False
+        ) -> torch.utils.hooks.RemovableHandle:
+        """Register a hook for a specific layer and component."""
+        
         layer = self.model.transformer.h[layer_idx]
         if component.startswith(('layer_', 'attn_')):
-            return layer.register_forward_hook(self._make_hook(component, last_token_only=last_token_only))
+            return layer.register_forward_hook(
+                self._make_hook(component, last_token_only=last_token_only))
         elif component.startswith(('qk_', 'ov_')):
-            return layer.attn.register_forward_hook(self._make_attention_hook(component, last_token_only=last_token_only))
+            return layer.attn.register_forward_hook(
+                self._make_attention_hook(component, last_token_only=last_token_only))
         elif component.startswith('input'):
-            return layer.mlp.c_fc.register_forward_hook(self._make_hook(component, last_token_only=last_token_only))
+            return layer.mlp.c_fc.register_forward_hook(
+                self._make_hook(component, last_token_only=last_token_only))
         elif component.startswith('gelu'):
-            return layer.mlp.gelu.register_forward_hook(self._make_hook(component, last_token_only=last_token_only))
+            return layer.mlp.gelu.register_forward_hook(
+                self._make_hook(component, last_token_only=last_token_only))
         elif component.startswith('output'):
-            return layer.mlp.c_proj.register_forward_hook(self._make_hook(component, last_token_only=last_token_only))
+            return layer.mlp.c_proj.register_forward_hook(
+                self._make_hook(component, last_token_only=last_token_only))
         else:
             raise ValueError(f"Unknown component: {component}")
 
     def _make_hook(self, component_name: str, last_token_only: bool = False):
         def hook(module, input, output):
+            if self.verbose:
+                print(f"Hook fired for {component_name}: output shape {output.shape}")
+            
+            # Guard against unexpected hook firings
+            if component_name not in self.activations:
+                if self.verbose:
+                    print(f"Warning: Hook fired for {component_name}, but no activation list was set up.")
+                return
+            
             if last_token_only:
                 if output.dim() == 3:
-                    self.activations[component_name].append(output[:, -1, :].detach().cpu().numpy())
+                    self.activations[component_name].append(
+                        output[:, -1, :].detach().cpu().numpy())
                 else:
-                    self.activations[component_name].append(output.detach().cpu().numpy())
+                    self.activations[component_name].append(
+                        output.detach().cpu().numpy())
             else:
-                self.activations[component_name].append(output.detach().cpu().numpy())
+                self.activations[component_name].append(
+                    output.detach().cpu().numpy())
+            
+            if self.verbose:
+                print(f"Stored activation for {component_name}: {len(self.activations[component_name])} items")
         return hook
 
     def _make_attention_hook(self, component_name: str, last_token_only: bool = False):
         def hook(module, input, output):
+            if self.verbose:
+                print(f"Attention hook fired for {component_name}")
+            
+            # Guard against unexpected hook firings
+            if component_name not in self.activations:
+                if self.verbose:
+                    print(f"Warning: Attention hook fired for {component_name}, but no activation list was set up.")
+                return
+            
             x = input[0]
             B, T, C = x.size()
             qkv = module.c_attn(x)
@@ -118,13 +157,17 @@ class HookManager:
             ov_output = torch.matmul(qk_attn_softmax, v)
             if last_token_only:
                 if component_name.startswith('qk_attn_softmax'):
-                    self.activations[component_name].append(qk_attn_softmax[:, :, -1, :].detach().cpu().numpy())
+                    self.activations[component_name].append(
+                        qk_attn_softmax[:, :, -1, :].detach().cpu().numpy())
                 elif component_name.startswith('qk_'):
-                    self.activations[component_name].append(qk_attn[:, :, -1, :].detach().cpu().numpy())
+                    self.activations[component_name].append(
+                        qk_attn[:, :, -1, :].detach().cpu().numpy())
                 elif component_name.startswith('ov_'):
-                    self.activations[component_name].append(ov_output[:, :, -1, :].detach().cpu().numpy())
+                    self.activations[component_name].append(
+                        ov_output[:, :, -1, :].detach().cpu().numpy())
                 else:
-                    self.activations[component_name].append(output.detach().cpu().numpy())
+                    self.activations[component_name].append(
+                        output.detach().cpu().numpy())
             else:
                 if component_name.startswith('qk_attn_softmax'):
                     self.activations[component_name].append(
@@ -142,21 +185,43 @@ class HookManager:
                     self.activations[component_name].append(
                         output.detach().cpu().numpy()
                     )
+            
+            if self.verbose:
+                print(f"Stored attention activation for {component_name}: {len(self.activations[component_name])} items")
         return hook
     
-    def validate_outputs(self, expected_count: int, layer_name: Optional[str] = None) -> None:
+    def validate_outputs(self, expected_count: int, layer_name: Optional[str] = None, requested_components: Optional[List[str]] = None) -> None:
         """Validate that hooks captured the expected activations.
         
         Args:
             expected_count: Expected number of activation sets
             layer_name: Optional specific layer to validate
+            requested_components: Optional list of components that were actually requested
             
         Raises:
             ValueError: If activations were not captured correctly
         """
-        layers_to_check = [layer_name] if layer_name else list(self.activations.keys())
+        if self.verbose:
+            print(f"Validating outputs. Expected count: {expected_count}")
+            print(f"Current activations: {self.activations}")
+            if requested_components:
+                print(f"Requested components: {requested_components}")
+        
+        # Only validate components that were actually requested
+        if requested_components:
+            layers_to_check = [layer for layer in requested_components if layer in self.activations]
+        elif layer_name:
+            layers_to_check = [layer_name] if layer_name in self.activations else []
+        else:
+            layers_to_check = list(self.activations.keys())
+        
+        if self.verbose:
+            print(f"Layers to check: {layers_to_check}")
         
         for layer in layers_to_check:
+            if self.verbose:
+                print(f"Checking layer {layer}: {len(self.activations[layer])} items")
+            
             if not self.activations[layer]:
                 raise ValueError(f"No activations captured for layer {layer}")
             if len(self.activations[layer]) != 1:
@@ -167,6 +232,9 @@ class HookManager:
             
             # Validate shapes
             act = self.activations[layer][0]
+            if self.verbose:
+                print(f"Layer {layer} activation shape: {act.shape}")
+            
             if layer.startswith(('qk_', 'ov_')):
                 if len(act.shape) != 4:
                     raise ValueError(
@@ -185,6 +253,9 @@ class HookManager:
                     f"Expected batch size {expected_count} for {layer}, "
                     f"got {act.shape[0]}"
                 )
+        
+        if self.verbose:
+            print("Validation completed successfully")
     
     def get_activations(self) -> Dict[str, np.ndarray]:
         """Get captured activations.
@@ -192,10 +263,22 @@ class HookManager:
         Returns:
             Dictionary mapping component names to their activations
         """
-        return {
+        if self.verbose:
+            print(f"Getting activations. Current state: {self.activations}")
+            for component, acts_list in self.activations.items():
+                print(f"  {component}: {len(acts_list)} items")
+                if acts_list:
+                    print(f"    First item shape: {acts_list[0].shape}")
+        
+        result = {
             component: acts_list[0] if acts_list else None
             for component, acts_list in self.activations.items()
         }
+        
+        if self.verbose:
+            print(f"Returning activations: {result}")
+        
+        return result
     
     def clear_activations(self) -> None:
         """Clear stored activations."""
@@ -1159,8 +1242,15 @@ class BaseAnalyzer(ABC):
         Returns:
             Dictionary mapping component names to their states as {layer: tensor[batch_size, seq_len, hidden_dim]}
         """
+        if self.verbose:
+            print(f"Extracting internal states for {len(sequences)} sequences")
+            print(f"Components: {components}")
+        
         # Tokenize sequences
         tokens = self._prepare_input(sequences, batch=True)
+        
+        if self.verbose:
+            print(f"Input tokens shape: {tokens.shape}")
         
         # Store original training state
         was_training = self.model.training
@@ -1172,17 +1262,25 @@ class BaseAnalyzer(ABC):
             # Set to eval mode and disable gradients
             self.model.eval()
             with torch.no_grad():
+                if self.verbose:
+                    print("Running model forward pass...")
                 self.model(tokens)
+                if self.verbose:
+                    print("Forward pass completed")
                 # Validate hook outputs
-                self.hook_manager.validate_outputs(len(sequences))
+                self.hook_manager.validate_outputs(len(sequences), requested_components=components)
         finally:
             # Restore original training state
             if was_training:
                 self.model.train()
-            
-            # Get activations and cleanup
-            activations = self.hook_manager.get_activations()
-            self.hook_manager.cleanup()
+        
+        # Get activations before cleanup
+        activations = self.hook_manager.get_activations()
+        if self.verbose:
+            print(f"Retrieved activations: {list(activations.keys())}")
+        
+        # Cleanup after getting activations
+        self.hook_manager.cleanup()
         
         return activations
 

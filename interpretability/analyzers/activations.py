@@ -9,7 +9,6 @@ import seaborn as sns
 import torch
 
 from interpretability.core.base import BaseAnalyzer
-from interpretability.core.utils import embed_sequence
 from interpretability.visualizers.activation_viz import ActivationVisualizer
 from transformer.models import MLP
 
@@ -22,7 +21,6 @@ class ActivationAnalyzer(BaseAnalyzer):
 
     Attributes:
         model (torch.nn.Module): The transformer model to analyze
-        _hooks (list[torch.utils.hooks.RemovableHandle]): Storage for hooks
     """
 
     def __init__(
@@ -41,7 +39,6 @@ class ActivationAnalyzer(BaseAnalyzer):
             architecture_type: Type of architecture ('standard' or 'last_token')
         """
         super().__init__(model, visualizer_class=ActivationVisualizer)
-        self._hooks: list[torch.utils.hooks.RemovableHandle] = []
         self.model_component = 'Activation'  # Will be overridden by subclasses
         self.layer_composition = self._get_layer_composition(model_config)
         self.model_config = model_config
@@ -591,9 +588,18 @@ class EmbeddingAnalyzer(ActivationAnalyzer):
         if not isinstance(input_seq, (list, np.ndarray)):
             input_seq = [input_seq]
 
-        captured_activations = {seq: {} for seq in input_seq}
-        for seq in input_seq:
-            embed = embed_sequence(self.model, seq, flatten=False)
-            captured_activations[seq]['embed'] = embed#.squeeze(1)
+        # Use unified hook system to capture embeddings
+        raw_activations = self._extract_internal_states(input_seq, ['embed'])
 
-        return captured_activations
+        # Convert raw activations to the expected format
+        # raw_activations: {layer: tensor[batch_size, seq_len, hidden_dim]}
+        # -> {seq: {layer: activation_array}}
+        activations = {
+            seq: {
+                layer_name: acts[i]  # [i] gets i-th sequence
+                for layer_name, acts in raw_activations.items()
+            }
+            for i, seq in enumerate(input_seq)
+        }
+
+        return activations
