@@ -8,7 +8,7 @@ import torch
 from torch.nn import functional as F
 
 import utils.file_management as fm
-from transformer.transformer import DataLoader
+from transformer.models import DataLoader
 from utils.model_utils import load_trained_model
 
 seed = 200

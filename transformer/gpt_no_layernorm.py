@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 
-from transformer import GPT, MLP, CausalSelfAttention
+from transformer.transformer import GPT, MLP, CausalSelfAttention
 
 seed = 200
 torch.manual_seed(seed)

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-from transformer import GPT, MLP, Block, CausalSelfAttention
+from transformer.transformer import GPT, MLP, Block, CausalSelfAttention
 
 seed = 200
 torch.manual_seed(seed)
@@ -230,3 +230,80 @@ class LastTokenGPT(GPT):
         loss = self.calculate_loss(logits, targets, **kwargs)
 
         return logits, loss
+
+
+class LastTokenGPTAdapter(nn.Module):
+    """
+    Adapter that makes LastTokenGPT or standard GPT compatible with analyzers,
+    and provides last-token-specific accessors for attention and MLP activations.
+    """
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+        self.config = model.config
+        self.layer_mapping = self._create_layer_mapping()
+        self._last_token_attention_cache = None
+        self._last_token_mlp_cache = None
+        self._is_last_token_gpt = hasattr(model, 'transformer') and hasattr(model.transformer.h[-1], 'attn_final')
+
+    def _create_layer_mapping(self):
+        mapping = {}
+        for i in range(self.config.n_layer):
+            if hasattr(self.model.transformer.h[i], 'attn_final'):
+                mapping[f'attn_{i}'] = self.model.transformer.h[i].attn_final
+            else:
+                mapping[f'attn_{i}'] = self.model.transformer.h[i].attn
+            mapping[f'mlp_{i}'] = self.model.transformer.h[i].mlp
+        mapping['wte'] = self.model.transformer.wte
+        mapping['wpe'] = self.model.transformer.wpe
+        mapping['ln_f'] = self.model.transformer.ln_f
+        return mapping
+
+    def get_layer(self, layer_name: str):
+        if layer_name in self.layer_mapping:
+            return self.layer_mapping[layer_name]
+        else:
+            return getattr(self.model, layer_name, None)
+
+    def forward(self, idx, targets=None, **kwargs):
+        # Clear caches
+        self._last_token_attention_cache = None
+        self._last_token_mlp_cache = None
+        # Register hooks for last token attention and MLP
+        hooks = []
+        def cache_attention(module, input, output):
+            self._last_token_attention_cache = output.detach()
+        def cache_mlp(module, input, output):
+            self._last_token_mlp_cache = output.detach()
+        # Register on final layer
+        if self._is_last_token_gpt:
+            hooks.append(self.model.transformer.h[-1].attn_final.register_forward_hook(cache_attention))
+            hooks.append(self.model.transformer.h[-1].mlp.register_forward_hook(cache_mlp))
+        else:
+            hooks.append(self.model.transformer.h[-1].attn.register_forward_hook(cache_attention))
+            hooks.append(self.model.transformer.h[-1].mlp.register_forward_hook(cache_mlp))
+        # Forward pass
+        out = self.model(idx, targets, **kwargs)
+        # Remove hooks
+        for h in hooks:
+            h.remove()
+        return out
+
+    def get_last_token_attention(self):
+        """Return the last token's attention output (shape: (B, n_embd) or (B, 1, n_embd))."""
+        if self._last_token_attention_cache is None:
+            raise RuntimeError("No attention output cached. Run a forward pass first.")
+        return self._last_token_attention_cache
+
+    def get_last_token_mlp_activations(self):
+        """Return the last token's MLP output (shape: (B, n_embd) or (B, 1, n_embd))."""
+        if self._last_token_mlp_cache is None:
+            raise RuntimeError("No MLP output cached. Run a forward pass first.")
+        return self._last_token_mlp_cache
+
+    def get_expected_shapes(self, batch_size: int, seq_len: int):
+        shapes = {}
+        for i in range(self.config.n_layer):
+            shapes[f'attn_{i}'] = (batch_size, seq_len, self.config.n_embd)
+            shapes[f'mlp_{i}'] = (batch_size, seq_len, self.config.n_embd)
+        return shapes
