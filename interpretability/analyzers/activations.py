@@ -27,8 +27,9 @@ class ActivationAnalyzer(BaseAnalyzer):
         self,
         model: torch.nn.Module,
         model_config: Any,
-        layers: Optional[list[str]] = None,
-        architecture_type: str = 'standard'
+        # layers: Optional[list[str]] = None,
+        architecture_type: str = 'standard',
+        **kwargs
     ):
         """Initialize the activation analyzer.
 
@@ -38,7 +39,7 @@ class ActivationAnalyzer(BaseAnalyzer):
             layers: Optional list of layers to analyze
             architecture_type: Type of architecture ('standard' or 'last_token')
         """
-        super().__init__(model, visualizer_class=ActivationVisualizer)
+        super().__init__(model, visualizer_class=ActivationVisualizer, **kwargs)
         self.model_component = 'Activation'  # Will be overridden by subclasses
         self.layer_composition = self._get_layer_composition(model_config)
         self.model_config = model_config
@@ -513,7 +514,8 @@ class MLPAnalyzer(ActivationAnalyzer):
         self,
         model: torch.nn.Module,
         config: Any,
-        layers: Optional[list[str]] = None
+        layers: Optional[list[str]] = None,
+        **kwargs
     ):
         """Initialize MLP analyzer.
 
@@ -522,7 +524,7 @@ class MLPAnalyzer(ActivationAnalyzer):
             config: Model configuration object
             layers: Optional list of layers to analyze
         """
-        super().__init__(model, config, layers)
+        super().__init__(model, config, layers, **kwargs)
         self.model_component = 'MLP'
         self.mlp_components = layers or list(self.layer_composition.keys())
         self.layers = [f'{c}_{i}' for c in self.mlp_components for i in range(config.n_layer)]
@@ -549,7 +551,8 @@ class EmbeddingAnalyzer(ActivationAnalyzer):
         self,
         model: torch.nn.Module,
         config: Any,
-        layers: Optional[list[str]] = None
+        layers: Optional[list[str]] = None,
+        **kwargs
     ):
         """Initialize embedding analyzer.
 
@@ -558,7 +561,7 @@ class EmbeddingAnalyzer(ActivationAnalyzer):
             config: Model configuration object
             layers: Optional list of layers to analyze
         """
-        super().__init__(model, config, layers)
+        super().__init__(model, config, layers, **kwargs)
         self.model_component = 'Embedding'
         self.layers = layers or list(self.layer_composition.keys())
 

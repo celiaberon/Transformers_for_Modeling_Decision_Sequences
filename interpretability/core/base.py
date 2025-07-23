@@ -1283,29 +1283,3 @@ class BaseAnalyzer(ABC):
         self.hook_manager.cleanup()
         
         return activations
-
-    def _extract_last_token_states(self, sequences: list[str], layers: list[str]):
-        """Extract states from LastTokenGPT architecture."""
-        # Import here to avoid circular imports
-        from interpretability.last_token_hooks import \
-            LastTokenActivationAnalyzer
-
-        # Use specialized analyzer for LastTokenGPT
-        last_token_analyzer = LastTokenActivationAnalyzer(
-            self.model, self.model_config, layers
-        )
-        
-        # Get activations and convert to expected format
-        raw_activations = last_token_analyzer.get_activations(sequences)
-        
-        # Convert format: {seq: {layer: tensor}} -> {layer: tensor[batch, seq, hidden]}
-        converted_activations = {}
-        for layer in layers:
-            if layer in raw_activations[sequences[0]]:
-                # Stack activations from all sequences
-                layer_activations = [
-                    raw_activations[seq][layer] for seq in sequences
-                ]
-                converted_activations[layer] = torch.stack(layer_activations)
-        
-        return converted_activations
