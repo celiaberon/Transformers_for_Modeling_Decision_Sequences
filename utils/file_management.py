@@ -92,7 +92,7 @@ def get_file_path(filename, run=None, create_dir=False):
     return os.path.join(run_dir, filename)
 
 
-def get_experiment_file(filename_template, run=None, suffix='tr', subdir=None):
+def get_experiment_file(filename_template, run=None, suffix='tr', subdir=None, use_standard=False):
     """
     Get path to an experiment-specific file.
     
@@ -101,16 +101,17 @@ def get_experiment_file(filename_template, run=None, suffix='tr', subdir=None):
         run (int, optional): Run number. Defaults to latest run.
         suffix (str, optional): Dataset suffix ('tr' or 'v'). Defaults to 'tr'.
         subdir (str, optional): Subdirectory within the run directory. Defaults to None.
-    
+        use_standard (bool, optional): Whether to use the standard dataset directory. Defaults to False.
     Returns:
         str: Full path to the requested file
     """
     if run is None:
         run = get_latest_run()
     
-    # Check if we should use standard dataset
-    use_standard = (os.environ.get('USE_STANDARD_DATASET', 'false').lower()
-                    == 'true')
+    # Check if we should use standard dataset (extra logic for metadata)
+    if use_standard or (subdir in ['seqs', 'agent_behavior']):
+        use_standard = (os.environ.get('USE_STANDARD_DATASET', 'false').lower()
+                        == 'true')
     standard_dataset_dir = os.environ.get('STANDARD_DATASET_DIR')
     dataset_identifier = os.environ.get('DATASET_IDENTIFIER', 'default')
     
@@ -183,7 +184,7 @@ def get_domain_params(run=None, domain_id=None, suffix='tr'):
     """
     Get the parameters for a specific domain.
     """
-    metadata_file = get_experiment_file("metadata.txt", run)
+    metadata_file = get_experiment_file("metadata.txt", run, use_standard=True)
 
     with open(metadata_file, 'r') as f:
         data_section = None
