@@ -1,0 +1,6 @@
+2025-07-16 17:48:16 - job_24941490 - interp - Total number of parameters: 292
+2025-07-16 17:48:16 - job_24941490 - interp - Number of layers: 1
+2025-07-16 17:48:16 - job_24941490 - interp - Number of attention heads: 1
+2025-07-16 17:48:16 - job_24941490 - interp - Embedding dimension: 4
+2025-07-16 17:48:16 - job_24941490 - interp - Vocabulary size: 4
+2025-07-16 17:48:16 - job_24941490 - interp - Block size (context length): 6

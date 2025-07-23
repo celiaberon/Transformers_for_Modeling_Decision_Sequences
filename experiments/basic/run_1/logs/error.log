@@ -1,0 +1,22 @@
+/n/home00/cberon/code/behavior-helpers/bh/visualization/plot_trials.py:231: UserWarning: No artists with labels found to put in legend.  Note that artists whose label start with an underscore are ignored when legend() is called with no argument.
+  ax.legend(bbox_to_anchor=(1, 1), loc='upper left', frameon=False)
+/n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/./transformer/inference/plot_checkpoint_comparison.py:89: UserWarning: Tight layout not applied. tight_layout cannot make Axes height small enough to accommodate all Axes decorations.
+  plt.tight_layout()
+/n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/interpretability/interp_helpers.py:379: ClusterWarning: The symmetric non-negative hollow observation matrix looks suspiciously like an uncondensed distance matrix
+  Z_ordered = optimal_leaf_ordering(Z, square_distance)
+/n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/interpretability/interp_helpers.py:379: ClusterWarning: The symmetric non-negative hollow observation matrix looks suspiciously like an uncondensed distance matrix
+  Z_ordered = optimal_leaf_ordering(Z, square_distance)
+/n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/interpretability/interp_helpers.py:379: ClusterWarning: The symmetric non-negative hollow observation matrix looks suspiciously like an uncondensed distance matrix
+  Z_ordered = optimal_leaf_ordering(Z, square_distance)
+/n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/interpretability/interp_helpers.py:379: ClusterWarning: The symmetric non-negative hollow observation matrix looks suspiciously like an uncondensed distance matrix
+  Z_ordered = optimal_leaf_ordering(Z, square_distance)
+/n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/interpretability/interp_helpers.py:379: ClusterWarning: The symmetric non-negative hollow observation matrix looks suspiciously like an uncondensed distance matrix
+  Z_ordered = optimal_leaf_ordering(Z, square_distance)
+/n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/interpretability/interp_helpers.py:379: ClusterWarning: The symmetric non-negative hollow observation matrix looks suspiciously like an uncondensed distance matrix
+  Z_ordered = optimal_leaf_ordering(Z, square_distance)
+/n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/interpretability/interp_helpers.py:379: ClusterWarning: The symmetric non-negative hollow observation matrix looks suspiciously like an uncondensed distance matrix
+  Z_ordered = optimal_leaf_ordering(Z, square_distance)
+/n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/interpretability/interp_helpers.py:379: ClusterWarning: The symmetric non-negative hollow observation matrix looks suspiciously like an uncondensed distance matrix
+  Z_ordered = optimal_leaf_ordering(Z, square_distance)
+/n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/interpretability/interp_helpers.py:379: ClusterWarning: The symmetric non-negative hollow observation matrix looks suspiciously like an uncondensed distance matrix
+  Z_ordered = optimal_leaf_ordering(Z, square_distance)

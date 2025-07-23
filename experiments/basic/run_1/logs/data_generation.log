@@ -1,0 +1,48 @@
+2025-07-16 17:35:53 - job_24941484 - generate_data - Starting data generation with args:
+{ 'config_file': 'three_domains.ini',
+  'include_val': True,
+  'multiple_domains': False,
+  'num_steps_train': 100000,
+  'num_steps_val': 1000000,
+  'overwrite': False,
+  'profile': False,
+  'run': 1,
+  'task_params': { 'A': { 'agent': { 'alpha': 0.56,
+                                     'beta': 1.84,
+                                     'policy': 'probability_matching',
+                                     'tau': 1.25},
+                          'environment': { 'high_reward_prob': 0.9,
+                                           'low_reward_prob': 0.1,
+                                           'transition_prob': 0.02}}}}
+2025-07-16 17:35:55 - job_24941484 - generate_data - Generated 100000 steps for tr in run_1
+2025-07-16 17:35:55 - job_24941484 - generate_data - Files saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs
+2025-07-16 17:36:12 - job_24941484 - generate_data - Generated 1000000 steps for v in run_1
+2025-07-16 17:36:12 - job_24941484 - generate_data - Files saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs
+2025-07-16 17:36:12 - job_24941484 - generate_data - Metadata saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/metadata.txt
+2025-07-16 17:36:23 - job_24941484 - basic_evaluation - <generator object main.<locals>.<genexpr> at 0x154c646adbe0>
+
+
+Analysis for Domain A
+                           Left      Right
+========================================
+Rewarded (%)              39.91%      38.44%
+Unrewarded (%)            10.91%      10.74%
+========================================
+Total Trials:           100,000
+Number of Transitions:    1,948.0 (1.95% of total trials)
+Selected Correct (%):      85.37%
+Total trials: 100,000
+Total switches: 8,386.0
+Percent of trials with a switch: 8.40%
+
+2025-07-16 17:36:37 - job_24941484 - graphs_on_trial_block_transitions - <generator object main.<locals>.<genexpr> at 0x149984fb9080>
+2025-07-16 17:37:11 - job_24941484 - graphs_on_trial_block_transitions - Percent of trials with a switch: 8.40%
+2025-07-16 17:43:29 - job_unknown - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-07-16 17:43:29 - job_unknown - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-07-16 17:43:29 - job_unknown - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-07-16 17:43:29 - job_unknown - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-07-16 17:43:30 - job_24941484 - inspect_data - Total T=6 sequences in training data: 2149
+2025-07-16 17:43:30 - job_24941484 - inspect_data - Total T=6 sequences in validation data: 3495
+2025-07-16 17:43:30 - job_24941484 - inspect_data - Overall prediction accuracy: 66.00%
+2025-07-16 17:43:30 - job_unknown - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-07-16 17:43:30 - job_unknown - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.

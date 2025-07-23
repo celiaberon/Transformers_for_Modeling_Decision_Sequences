@@ -1,0 +1,82 @@
+2025-07-16 17:37:23 - job_24941490 - train - Initialized master logger (rank 0)
+2025-07-16 17:37:23 - job_24941490 - train - Using logarithmic checkpoint spacing. Enforcing data epochs is disabled.
+2025-07-16 17:37:23 - job_24941490 - train - Starting training with args: Namespace(sequence_length=6, n_layer=1, n_head=1, n_embd=4, epochs=100, max_lr=0.0006, task_id=None, run_number=2, compile=False, predict=False, eval_interval=None, checkpoint_interval='log', enforce_data_epochs=False, batch_size=256, choice_only=False, model_type='GPT')
+2025-07-16 17:37:24 - job_24941490 - train - Train loader class: DataLoader
+2025-07-16 17:37:24 - job_24941490 - train - Setting eval interval to 192
+2025-07-16 17:37:24 - job_24941490 - train - Total batch size: 3072
+2025-07-16 17:37:24 - job_24941490 - train - Gradient accumulation steps: 2
+2025-07-16 17:37:24 - job_24941490 - train - Total training steps: 19200
+2025-07-16 17:37:24 - job_24941490 - train - Steps to next checkpoint: 2
+2025-07-16 17:37:24 - job_24941490 - train - Batches per epoch: 384
+2025-07-16 17:37:32 - job_24941490 - train - step 0 | loss: 1.3816 | val_loss: 1.3836 | lr: 6.0000e-07 | norm: 0.8227 | dt: 256.84 ms | tok/sec: 11960.61
+2025-07-16 17:37:32 - job_24941490 - train - Checkpoint at step 0 (dataloader pos: 512)
+2025-07-16 17:37:32 - job_24941490 - train - Saving model at: /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_2/models/model_seen9M_cp0.pth
+2025-07-16 17:37:32 - job_24941490 - train - Checkpoint saved. Best val loss: 1.3836 (improved: True)
+2025-07-16 17:37:32 - job_24941490 - train - Number of steps to next checkpoint: 6
+2025-07-16 17:37:32 - job_24941490 - train - Checkpoint at step 6 (dataloader pos: 3584)
+2025-07-16 17:37:32 - job_24941490 - train - Saving model at: /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_2/models/model_seen9M_cp6.pth
+2025-07-16 17:37:32 - job_24941490 - train - Checkpoint saved. Best val loss: 1.3836 (improved: False)
+2025-07-16 17:37:32 - job_24941490 - train - Number of steps to next checkpoint: 15
+2025-07-16 17:37:32 - job_24941490 - train - Checkpoint at step 15 (dataloader pos: 8192)
+2025-07-16 17:37:32 - job_24941490 - train - Saving model at: /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_2/models/model_seen9M_cp15.pth
+2025-07-16 17:37:32 - job_24941490 - train - Checkpoint saved. Best val loss: 1.3836 (improved: False)
+2025-07-16 17:37:32 - job_24941490 - train - Number of steps to next checkpoint: 39
+2025-07-16 17:37:32 - job_24941490 - train - Checkpoint at step 39 (dataloader pos: 20480)
+2025-07-16 17:37:32 - job_24941490 - train - Saving model at: /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_2/models/model_seen9M_cp39.pth
+2025-07-16 17:37:32 - job_24941490 - train - Checkpoint saved. Best val loss: 1.3836 (improved: False)
+2025-07-16 17:37:32 - job_24941490 - train - Number of steps to next checkpoint: 97
+2025-07-16 17:37:32 - job_24941490 - train - Checkpoint at step 97 (dataloader pos: 50176)
+2025-07-16 17:37:32 - job_24941490 - train - Saving model at: /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_2/models/model_seen9M_cp97.pth
+2025-07-16 17:37:32 - job_24941490 - train - Checkpoint saved. Best val loss: 1.3836 (improved: False)
+2025-07-16 17:37:32 - job_24941490 - train - Number of steps to next checkpoint: 244
+2025-07-16 17:37:34 - job_24941490 - train - Checkpoint at step 244 (dataloader pos: 27185)
+2025-07-16 17:37:34 - job_24941490 - train - Saving model at: /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_2/models/model_seen9M_cp244.pth
+2025-07-16 17:37:34 - job_24941490 - train - Checkpoint saved. Best val loss: 1.3488 (improved: True)
+2025-07-16 17:37:34 - job_24941490 - train - Number of steps to next checkpoint: 610
+2025-07-16 17:37:37 - job_24941490 - train - Checkpoint at step 610 (dataloader pos: 17950)
+2025-07-16 17:37:37 - job_24941490 - train - Saving model at: /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_2/models/model_seen9M_cp610.pth
+2025-07-16 17:37:37 - job_24941490 - train - Checkpoint saved. Best val loss: 1.1068 (improved: True)
+2025-07-16 17:37:37 - job_24941490 - train - Number of steps to next checkpoint: 1525
+2025-07-16 17:37:44 - job_24941490 - train - Checkpoint at step 1525 (dataloader pos: 93208)
+2025-07-16 17:37:44 - job_24941490 - train - Saving model at: /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_2/models/model_seen9M_cp1525.pth
+2025-07-16 17:37:44 - job_24941490 - train - Checkpoint saved. Best val loss: 0.7914 (improved: True)
+2025-07-16 17:37:44 - job_24941490 - train - Number of steps to next checkpoint: 3000
+2025-07-16 17:37:47 - job_24941490 - train - step 1920 | loss: 0.8376 | val_loss: 0.7831 | lr: 5.9660e-04 | norm: 0.4315 | dt: 4.23 ms | tok/sec: 726564.90
+2025-07-16 17:37:56 - job_24941490 - train - Checkpoint at step 3000 (dataloader pos: 61964)
+2025-07-16 17:37:56 - job_24941490 - train - Saving model at: /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_2/models/model_seen9M_cp3000.pth
+2025-07-16 17:37:56 - job_24941490 - train - Checkpoint saved. Best val loss: 0.7782 (improved: True)
+2025-07-16 17:37:56 - job_24941490 - train - Number of steps to next checkpoint: 3000
+2025-07-16 17:38:03 - job_24941490 - train - step 3840 | loss: 0.7966 | val_loss: 0.7769 | lr: 5.6820e-04 | norm: 0.5326 | dt: 4.28 ms | tok/sec: 717741.86
+2025-07-16 17:38:19 - job_24941490 - train - step 5760 | loss: 0.8169 | val_loss: 0.7757 | lr: 5.1387e-04 | norm: 0.5382 | dt: 4.27 ms | tok/sec: 719987.81
+2025-07-16 17:38:20 - job_24941490 - train - Checkpoint at step 6000 (dataloader pos: 25123)
+2025-07-16 17:38:20 - job_24941490 - train - Saving model at: /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_2/models/model_seen9M_cp6000.pth
+2025-07-16 17:38:20 - job_24941490 - train - Checkpoint saved. Best val loss: 0.7756 (improved: True)
+2025-07-16 17:38:20 - job_24941490 - train - Number of steps to next checkpoint: 3000
+2025-07-16 17:38:34 - job_24941490 - train - step 7680 | loss: 0.7955 | val_loss: 0.7751 | lr: 4.3953e-04 | norm: 0.5321 | dt: 4.28 ms | tok/sec: 717581.97
+2025-07-16 17:38:44 - job_24941490 - train - Checkpoint at step 9000 (dataloader pos: 86560)
+2025-07-16 17:38:44 - job_24941490 - train - Saving model at: /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_2/models/model_seen9M_cp9000.pth
+2025-07-16 17:38:44 - job_24941490 - train - Checkpoint saved. Best val loss: 0.7748 (improved: True)
+2025-07-16 17:38:44 - job_24941490 - train - Number of steps to next checkpoint: 3000
+2025-07-16 17:38:50 - job_24941490 - train - step 9600 | loss: 0.7942 | val_loss: 0.7747 | lr: 3.5327e-04 | norm: 0.5572 | dt: 4.24 ms | tok/sec: 724522.15
+2025-07-16 17:39:05 - job_24941490 - train - step 11520 | loss: 0.8094 | val_loss: 0.7744 | lr: 2.6448e-04 | norm: 0.5850 | dt: 4.31 ms | tok/sec: 712778.77
+2025-07-16 17:39:09 - job_24941490 - train - Checkpoint at step 12000 (dataloader pos: 49669)
+2025-07-16 17:39:09 - job_24941490 - train - Saving model at: /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_2/models/model_seen9M_cp12000.pth
+2025-07-16 17:39:09 - job_24941490 - train - Checkpoint saved. Best val loss: 0.7744 (improved: True)
+2025-07-16 17:39:09 - job_24941490 - train - Number of steps to next checkpoint: 3000
+2025-07-16 17:39:21 - job_24941490 - train - step 13440 | loss: 0.7913 | val_loss: 0.7742 | lr: 1.8282e-04 | norm: 0.5912 | dt: 4.27 ms | tok/sec: 719666.10
+2025-07-16 17:39:33 - job_24941490 - train - Checkpoint at step 15000 (dataloader pos: 12809)
+2025-07-16 17:39:33 - job_24941490 - train - Saving model at: /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_2/models/model_seen9M_cp15000.pth
+2025-07-16 17:39:33 - job_24941490 - train - Checkpoint saved. Best val loss: 0.7741 (improved: True)
+2025-07-16 17:39:33 - job_24941490 - train - Number of steps to next checkpoint: 3000
+2025-07-16 17:39:36 - job_24941490 - train - step 15360 | loss: 0.8054 | val_loss: 0.7741 | lr: 1.1717e-04 | norm: 0.5343 | dt: 4.22 ms | tok/sec: 727138.93
+2025-07-16 17:39:52 - job_24941490 - train - step 17280 | loss: 0.8140 | val_loss: 0.7740 | lr: 7.4693e-05 | norm: 0.5638 | dt: 4.26 ms | tok/sec: 721035.36
+2025-07-16 17:39:57 - job_24941490 - train - Checkpoint at step 18000 (dataloader pos: 74250)
+2025-07-16 17:39:57 - job_24941490 - train - Saving model at: /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_2/models/model_seen9M_cp18000.pth
+2025-07-16 17:39:57 - job_24941490 - train - Checkpoint saved. Best val loss: 0.7739 (improved: True)
+2025-07-16 17:39:57 - job_24941490 - train - Number of steps to next checkpoint: 3000
+2025-07-16 17:40:07 - job_24941490 - train - Saving model at: /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_2/models/model_seen9M.pth
+2025-07-16 17:40:07 - job_24941490 - train - Metadata saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_2/metadata.txt
+2025-07-16 17:40:10 - job_24941490 - train - Experiment summary:
+{'model_id': 'l1_h1_e100_c6_d4', 'experiment_type': 'basic', 'domain_config': 'three_domains.ini', 'domain_id': 'B', 'model_type': 'GPT', 'num_samples': '9M', 'num_parameters': 292, 'max_steps': 19200, 'run_number': 2, 'sequence_length': 6, 'n_layer': 1, 'n_head': 1, 'n_embd': 4, 'epochs': 100, 'max_lr': 0.0006, 'task_id': None, 'compile': False, 'predict': False, 'eval_interval': 192, 'checkpoint_interval': 'log', 'enforce_data_epochs': False, 'batch_size': 256, 'choice_only': False, 'best_val_full_loss': 0.7738752365112305, 'best_val_full_loss_step': 19200, 'best_val_choice_loss': 0.2410135716199875, 'best_val_choice_loss_step': 1152, 'best_val_reward_loss': 0.678645670413971, 'best_val_reward_loss_step': 18240}
+2025-07-16 17:40:10 - job_24941490 - train - Experiment summary saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/model_summary.csv
+2025-07-16 17:40:10 - job_24941490 - train - Training completed. Final model saved as model_seen9M
