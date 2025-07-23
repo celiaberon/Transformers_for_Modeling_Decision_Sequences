@@ -2,7 +2,6 @@ import os
 import sys
 import numpy as np
 
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../')))
 import utils.file_management as fm
 from utils.parse_data import parse_simulated_data, get_data_filenames
 

@@ -7,7 +7,6 @@ import pandas as pd
 import seaborn as sns
 
 from typing import Dict, List, Optional, Union
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../../')))
 
 import utils.file_management as fm
 from evaluate_transformer_guess import compute_confusion_matrix
@@ -18,7 +17,6 @@ from utils.checkpoint_processing import (add_checkpoint_colorbar,
 from utils.parse_data import (align_predictions_with_gt, get_data_filenames,
                               parse_simulated_data)
 
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../../../behavior-helpers/')))
 from bh.visualization import plot_trials as pts
 
 def plot_confusion_matrix_with_bars(
@@ -104,8 +102,8 @@ def main(run=None, suffix: str = 'v'):
 
     run = run or fm.get_latest_run()
 
-    checkpoint_files = get_checkpoint_files(run, include_final=False, subdir='seqs', pattern='pred_model', ext='.txt')
-    indices_files = get_checkpoint_files(run, include_final=False, subdir='seqs', pattern='pred_indices', ext='.txt')
+    checkpoint_files = get_checkpoint_files(run, include_final=False, subdir='preds', pattern='pred_model', ext='.txt')
+    indices_files = get_checkpoint_files(run, include_final=False, subdir='preds', pattern='pred_indices', ext='.txt')
     model_files = get_checkpoint_files(run, include_final=True)
 
     if not checkpoint_files:

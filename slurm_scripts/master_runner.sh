@@ -2,31 +2,68 @@ source "./slurm_scripts/common_functions.sh"
 setup_environment
 
 # Parameters for experiment sweeps (or single)
-LAYERS_ARRAY=(1)
-HEADS_ARRAY=(1)
-EPOCHS_ARRAY=(100)
-TRAIN_STEPS_ARRAY=(100000)
-CONTEXT_LENGTH_ARRAY=(6)
-EMBD_DIM_ARRAY=(4)
-BATCH_SIZE_ARRAY=(256)
-DOMAIN_CONFIG_ARRAY=("three_domains.ini")
-DOMAIN_ID_ARRAY=("A" "B" "C" "B_not_sticky")
-EXPERIMENT_TYPE="basic"  # define the experiment you are running
+LAYERS_ARRAY=(1 2 4 8)
+HEADS_ARRAY=(1 2 4 8)
+EPOCHS_ARRAY=(100 200 400)
+TRAIN_STEPS_ARRAY=(100000 200000 400000)
+CONTEXT_LENGTH_ARRAY=(6 12 24 48)
+EMBD_DIM_ARRAY=(4 8 16 32)
+BATCH_SIZE_ARRAY=(256 512)
+DOMAIN_CONFIG_ARRAY=("domains.ini")
+DOMAIN_ID_ARRAY=("A" "C") # "B" "C" "B_not_sticky")
+EXPERIMENT_TYPE="comparison"  # define the experiment you are running
+export EXPERIMENT_TYPE  # Export immediately so it's available to all functions
+USE_STANDARD_DATASET=true  # Standard dataset flag - when true, uses a shared dataset for all runs
+DEBUG_MODE=false  # Debug mode flag - when true, prevents writing to model_summary.csv
+
+# Parameters for experiment sweeps (or single)
+# LAYERS_ARRAY=(1)
+# HEADS_ARRAY=(1)
+# EPOCHS_ARRAY=(100)
+# TRAIN_STEPS_ARRAY=(100000)
+# CONTEXT_LENGTH_ARRAY=(6)
+# EMBD_DIM_ARRAY=(4)
+# BATCH_SIZE_ARRAY=(256)
+# DOMAIN_CONFIG_ARRAY=("three_domains.ini")
+# DOMAIN_ID_ARRAY=("A" "B" "C" "B_not_sticky")
+# EXPERIMENT_TYPE="basic"  # define the experiment you are running
+# export EXPERIMENT_TYPE  # Export immediately so it's available to all functions
+# USE_STANDARD_DATASET=false  # Standard dataset flag - when true, uses a shared dataset for all runs
+# DEBUG_MODE=false  # Debug mode flag - when true, prevents writing to model_summary.csv
 
 # Options are:
 #   "basic": run_experiment.sh
 #   "multi_domain": run_test_1a_multi_domain.sh
 #   "agents_test": run_test_1b_agents.sh
 #   "environment_test": run_test_1c_environments.sh
+#   "comparison": model_comparison.sh
+#   "layer_norm": run_layer_norm.sh
 
-TRACKER_FILE="tracker.txt"
+TRACKER_FILE="experiments/${EXPERIMENT_TYPE}/tracker.txt"
 
 # Initialize starting run number - scan existing runs once at the beginning
 initialize_run
 NEXT_RUN_NUMBER=$RUN_NUMBER
 
+# Initialize comparison directory if needed
+if [ "$EXPERIMENT_TYPE" = "comparison" ]; then
+    # Ensure comparison base directory exists
+    mkdir -p "experiments/comparison"
+    
+    # Get next comparison number
+    COMPARISON_NUMBER=$(ls -d experiments/comparison/comparison_* 2>/dev/null | sort -t_ -k2 -n | tail -n1 | sed 's/.*comparison_//' || echo 0)
+    COMPARISON_NUMBER=$((COMPARISON_NUMBER + 1))
+    COMPARISON_DIR="experiments/comparison/comparison_${COMPARISON_NUMBER}"
+    mkdir -p "$COMPARISON_DIR"
+    echo "Created comparison directory: $COMPARISON_DIR"
+    
+    # Update tracker file for comparison
+    TRACKER_FILE="${COMPARISON_DIR}/tracker.txt"
+    echo "Comparison ${COMPARISON_NUMBER} started at $(date)" > "$TRACKER_FILE"
+fi
+
 # At the top of your script
-MAX_CONCURRENT_JOBS=12
+MAX_CONCURRENT_JOBS=11
 # Function to count currently running/pending jobs
 count_running_jobs() {
     local username=$(whoami)
@@ -38,10 +75,13 @@ count_running_jobs() {
 # Function to wait until jobs are below threshold
 wait_for_job_slot() {
     local max_jobs=$1
+    local jobs_remaining=$2  # Pass in jobs remaining to submit
     while true; do
         local current_jobs=$(count_running_jobs)
         echo "Currently running/pending jobs: $current_jobs (maximum: $max_jobs)"
-        
+        if [ "$jobs_remaining" != "" ]; then
+            echo "Jobs remaining to submit: $jobs_remaining"
+        fi
         if [ "$current_jobs" -lt "$max_jobs" ]; then
             echo "Job slot available, proceeding with submission"
             break
@@ -96,8 +136,19 @@ setup_environment
 # Use the pre-assigned run number instead of generating a new one
 RUN_NUMBER=${run_number}
 
+# Export environment variables for the training process
+export EXPERIMENT_TYPE="$EXPERIMENT_TYPE"
+export DEBUG_MODE="$DEBUG_MODE"
+if [ "$EXPERIMENT_TYPE" = "comparison" ]; then
+    export COMPARISON_DIR="$COMPARISON_DIR"
+fi
+
 # Create logs directory for this run and redirect outputs to separate log files
-RUN_DIR="experiments/run_\${RUN_NUMBER}"
+if [ "$EXPERIMENT_TYPE" = "comparison" ]; then
+    RUN_DIR="$COMPARISON_DIR/run_\${RUN_NUMBER}"
+else
+    RUN_DIR="experiments/$EXPERIMENT_TYPE/run_\${RUN_NUMBER}"
+fi
 LOG_DIR="\${RUN_DIR}/logs"
 mkdir -p "\${LOG_DIR}"
 
@@ -128,6 +179,12 @@ case "$EXPERIMENT_TYPE" in
     "multi_domain")
         SCRIPT="./slurm_scripts/run_test_1a_multi_domain.sh"
         ;;
+    "comparison")
+        SCRIPT="./slurm_scripts/model_comparison.sh"
+        ;;
+    "layer_norm")
+        SCRIPT="./slurm_scripts/run_layer_norm.sh"
+        ;;
     *)
         echo "Unknown experiment type: $EXPERIMENT_TYPE"
         exit 1
@@ -139,7 +196,11 @@ echo " " >> $TRACKER_FILE
 echo "run\${RUN_NUMBER}: $EXPERIMENT_TYPE, $epochs epochs, $train_steps train steps, $layers layers, $heads heads, $context_length context length, $embd_dim embedding dimensions, $domain_config" >> $TRACKER_FILE
 
 # Run the experiment
-bash \$SCRIPT \${RUN_NUMBER} $layers $heads $epochs $train_steps $context_length $embd_dim $batch_size "$domain_config" $domain_id
+if [ "$EXPERIMENT_TYPE" = "comparison" ]; then
+    bash \$SCRIPT \${RUN_NUMBER} $layers $heads $epochs $train_steps $context_length $embd_dim $batch_size "$domain_config" $domain_id "$USE_STANDARD_DATASET" "$COMPARISON_DIR" "$DEBUG_MODE"
+else
+    bash \$SCRIPT \${RUN_NUMBER} $layers $heads $epochs $train_steps $context_length $embd_dim $batch_size "$domain_config" $domain_id "$USE_STANDARD_DATASET" "$DEBUG_MODE"
+fi
 
 echo "Experiment completed: run\${RUN_NUMBER}"
 EOL
@@ -167,8 +228,20 @@ for layers in "${LAYERS_ARRAY[@]}"; do
                             for domain_config in "${DOMAIN_CONFIG_ARRAY[@]}"; do
                                 for domain_id in "${DOMAIN_ID_ARRAY[@]}"; do
                                     experiment_name="l${layers}_h${heads}_e${epochs}_c${context_length}_d${embd_dim}"
+                                    # Calculate jobs remaining
+                                    jobs_remaining=$(( (
+                                        ${#LAYERS_ARRAY[@]} * 
+                                        ${#HEADS_ARRAY[@]} * 
+                                        ${#EPOCHS_ARRAY[@]} * 
+                                        ${#TRAIN_STEPS_ARRAY[@]} * 
+                                        ${#CONTEXT_LENGTH_ARRAY[@]} * 
+                                        ${#EMBD_DIM_ARRAY[@]} * 
+                                        ${#BATCH_SIZE_ARRAY[@]} * 
+                                        ${#DOMAIN_CONFIG_ARRAY[@]} * 
+                                        ${#DOMAIN_ID_ARRAY[@]} 
+                                    ) - (NEXT_RUN_NUMBER - RUN_NUMBER) ))
                                     if [ $CURRENT_JOB_COUNT -ge $MAX_CONCURRENT_JOBS ]; then
-                                        wait_for_job_slot $MAX_CONCURRENT_JOBS
+                                        wait_for_job_slot $MAX_CONCURRENT_JOBS $jobs_remaining
                                         # Reset counter when we've waited
                                         CURRENT_JOB_COUNT=$(count_running_jobs)
                                     fi

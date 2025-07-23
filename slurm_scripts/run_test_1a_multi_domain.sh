@@ -28,17 +28,42 @@ EMBD_DIM=${7:-64}
 BATCH_SIZE=${8:-256}
 DOMAIN_CONFIG=${9:-"domains.ini"}
 DOMAIN_ID=${10:-"B"}  # unused for multi-domain
+USE_STANDARD_DATASET=${11:-"false"}
+DEBUG_MODE=${12:-"false"}
+
+export EXPERIMENT_TYPE="multi_domain"
+export DEBUG_MODE=$DEBUG_MODE
+
+# Setup standard dataset if requested
+setup_standard_dataset \
+    --use-standard-dataset "$USE_STANDARD_DATASET" \
+    --domain-config "$DOMAIN_CONFIG" \
+    --domain-id "$DOMAIN_ID" \
+    --multiple-domains "true" \
+    --train-steps "$TRAIN_STEPS" \
+    --val-steps "1000000" \
+    --run-number "$RUN_NUMBER"
 
 # Export run number
 export RUN_NUMBER
 echo "Using run number: $RUN_NUMBER"
 
 print_section_header "Data Generation"
-python ${BASE_PATH}/synthetic_data_generation/generate_data.py --run $RUN_NUMBER --multiple_domains --num_steps_val=1_000_000 --no_overwrite --num_steps_train=$TRAIN_STEPS --config_file $DOMAIN_CONFIG
-
-print_section_header "Basic Evaluation"
-python ${BASE_PATH}/evaluation/basic_evaluation.py --run $RUN_NUMBER
-python ${BASE_PATH}/evaluation/graphs_on_trial_block_transitions.py --run $RUN_NUMBER
+if [ "$USE_STANDARD_DATASET" = "true" ]; then
+    generate_standard_dataset
+else
+    python ${BASE_PATH}/synthetic_data_generation/generate_data.py \
+        --run $RUN_NUMBER \
+        --num_steps_train=$TRAIN_STEPS \
+        --num_steps_val=1_000_000 \
+        --no_overwrite \
+        --config_file $DOMAIN_CONFIG \
+        --multiple_domains
+    
+    # Run evaluation for individual datasets
+    python ${BASE_PATH}/evaluation/basic_evaluation.py --run $RUN_NUMBER
+    python ${BASE_PATH}/evaluation/graphs_on_trial_block_transitions.py --run $RUN_NUMBER
+fi
 
 print_section_header "Model Training"
 
@@ -49,7 +74,7 @@ setup_distributed_environment
 start_time=$(date +%s)
 
 # Launch distributed training with srun
-srun --cpu-bind=none python ${BASE_PATH}/transformer/train.py \
+srun --cpu-bind=none python -m transformer.train \
     --n_layer=$N_LAYER \
     --n_head=$N_HEAD \
     --n_embd=$EMBD_DIM \
@@ -67,7 +92,9 @@ echo "Total Training Time= $total_time seconds"
 setup_gpu_environment
 
 # Automatically remove large learning files
-rm "${BASE_PATH}/experiments/run_${RUN_NUMBER}/seqs/learning_model"*"val_preds.txt" 2>/dev/null || true
+# Use experiment type to determine directory
+experiment_type=${EXPERIMENT_TYPE:-multi_domain}
+rm "${BASE_PATH}/experiments/${experiment_type}/run_${RUN_NUMBER}/seqs/learning_model"*"val_preds.txt" 2>/dev/null || true
 
 print_section_header "Transformer Evaluation"
 python ${INFERENCE_PATH}/guess_using_transformer.py --run $RUN_NUMBER

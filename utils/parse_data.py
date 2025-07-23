@@ -2,16 +2,13 @@ import itertools
 import os
 import sys
 
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../')))
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../transformer/')))
-
 import numpy as np
 import pandas as pd
 import torch
 
 import utils.file_management as fm
 from synthetic_data_generation.agent import RFLR_mouse
-from transformer.transformer import GPT, GPTConfig
+from transformer.models import GPTConfig
 
 logger = None
 
@@ -39,9 +36,19 @@ def parse_simulated_data(behavior_filename, high_port_filename, session_filename
     Notes: Typically for simulated data used as input for training model.
     """
 
-    run_and_suffix = behavior_filename.split('_')[-1].split('.')[0]
-    suffix = 'tr' if run_and_suffix.endswith('tr') else 'v'
-    run = int(run_and_suffix[:-len(suffix)])
+    # Handle both regular and standard dataset filename formats
+    filename_part = behavior_filename.split('_')[-1].split('.')[0]
+    suffix = 'tr' if filename_part.endswith('tr') else 'v'
+    
+    # Check if this is a standard dataset filename (e.g., "B_tr" instead of "114tr")
+    if filename_part == suffix:
+        # Standard dataset format: behavior_B_tr.txt
+        # Extract run number from environment variable or use a default
+        import os
+        run = int(os.environ.get('RUN_NUMBER', '1'))
+    else:
+        # Regular dataset format: behavior_run_114tr.txt
+        run = int(filename_part[:-len(suffix)])
 
     behavior_data = fm.read_sequence(behavior_filename)
     high_port_data = fm.read_sequence(high_port_filename)
@@ -108,12 +115,24 @@ def parse_passive_estimator(run, events, suffix='tr'):
     domains = events.domain.unique()
     params = {}
     for domain in domains:
-        params[domain] = fm.get_domain_params(run=run, domain_id=domain, suffix=suffix)[1]
+        domain_params = fm.get_domain_params(run=run, domain_id=domain, suffix=suffix)
+        if domain_params is None:
+            print(f"WARNING: No parameters found for domain '{domain}' in run {run}, suffix '{suffix}'")
+            print(f"Available domains in data: {domains}")
+            print(f"Skipping passive estimator for domain '{domain}'")
+            continue
+        params[domain] = domain_params[1]
 
     for session in events.session.unique():
         session_mask = events.session == session
         session_events = events[session_mask]
         domain_id = session_events.domain.unique().item()
+        
+        # Skip if we don't have parameters for this domain
+        if domain_id not in params:
+            print(f"WARNING: No parameters available for domain '{domain_id}' in session {session}")
+            continue
+            
         domain_params = params[domain_id]
         agent = RFLR_mouse(**domain_params)
         
@@ -400,46 +419,13 @@ def align_predictions_with_gt(events, predictions, indices=None):
     return events_
 
 
-def load_trained_model(run, model_name, device, **kwargs):
-
-    # Get model info from metadata
-    model_info = fm.parse_model_info(run, model_name=model_name)
-    if model_name is None:
-        model_name = model_info['model_name']
-    else:
-        assert (model_info['model_name'] == model_name) or (model_info['model_name'] == model_name.split('_cp')[0]), (
-            'did not recover correct model')
-
-    # Configure model using metadata
-    config = GPTConfig(
-        block_size=model_info['config'].get('Block size', 12),
-        vocab_size=model_info['config'].get('Vocab size', 4),
-        n_layer=model_info['config'].get('Number of layers', 1),
-        n_head=model_info['config'].get('Number of heads', 1),
-        n_embd=model_info['config'].get('Embedding size', 64)
-    )
-    # Load the trained model
-    model = GPT(config)
-    model_path = fm.get_experiment_file(f'{model_name}.pth', run, subdir='models')
-
-    try:
-        model.load_state_dict(torch.load(model_path, map_location=device, **kwargs))
-    except Exception:
-        checkpoint = torch.load(model_path, map_location=device,  **kwargs)
-        model.load_state_dict(checkpoint['model_state_dict'])
-    model.to(device)
-    model.eval()
-
-    return model, model_info, config
-
-
 def load_predictions(run, model_name, suffix='v'):
 
     files = get_data_filenames(run, suffix=suffix)
     gt_events = parse_simulated_data(*files)
 
-    predictions_filename = fm.get_experiment_file(f"pred_{model_name}.txt", run, subdir='seqs')
-    indices_filename = fm.get_experiment_file(f"pred_indices_{model_name}.txt", run, subdir='seqs')
+    predictions_filename = fm.get_experiment_file(f"pred_{model_name}.txt", run, subdir='preds')
+    indices_filename = fm.get_experiment_file(f"pred_indices_{model_name}.txt", run, subdir='preds')
     assert fm.check_files_exist(predictions_filename)
 
     predictions = fm.read_sequence(predictions_filename)

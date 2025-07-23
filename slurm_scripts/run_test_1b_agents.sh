@@ -28,6 +28,21 @@ CONTEXT_LENGTH=${6:-12}
 EMBD_DIM=${7:-64}
 BATCH_SIZE=${8:-256}
 DOMAIN_CONFIG=${9:-"evidence_based_agent_domains.ini"}
+USE_STANDARD_DATASET=${10:-"false"}
+DEBUG_MODE=${11:-"false"}
+
+export EXPERIMENT_TYPE="agents_test"
+export DEBUG_MODE=$DEBUG_MODE
+
+# Setup standard dataset if requested
+setup_standard_dataset \
+    --use-standard-dataset "$USE_STANDARD_DATASET" \
+    --domain-config "$DOMAIN_CONFIG" \
+    --domain-id "default" \
+    --multiple-domains "true" \
+    --train-steps "$TRAIN_STEPS" \
+    --val-steps "1000000" \
+    --run-number "$RUN_NUMBER"
 
 # Export run number
 export RUN_NUMBER
@@ -35,17 +50,22 @@ echo "Using run number: $RUN_NUMBER"
 
 print_section_header "Data Generation"
 
-python ${BASE_PATH}/synthetic_data_generation/generate_data.py \
-    --run $RUN_NUMBER \
-    --num_steps_train=$TRAIN_STEPS \
-    --num_steps_val=1_000_000 \
-    --no_overwrite \
-    --multiple_domains \
-    --config_file $DOMAIN_CONFIG
+if [ "$USE_STANDARD_DATASET" = "true" ]; then
+    generate_standard_dataset
+else
+    python ${BASE_PATH}/synthetic_data_generation/generate_data.py \
+        --run $RUN_NUMBER \
+        --num_steps_train=$TRAIN_STEPS \
+        --num_steps_val=1_000_000 \
+        --no_overwrite \
+        --config_file $DOMAIN_CONFIG \
+        --multiple_domains
+fi
 
-print_section_header "Basic Evaluation"
-python ${BASE_PATH}/evaluation/basic_evaluation.py --run $RUN_NUMBER
-python ${BASE_PATH}/evaluation/graphs_on_trial_block_transitions.py --run $RUN_NUMBER
+    # Run evaluation for individual datasets
+    python ${BASE_PATH}/evaluation/basic_evaluation.py --run $RUN_NUMBER
+    python ${BASE_PATH}/evaluation/graphs_on_trial_block_transitions.py --run $RUN_NUMBER
+fi
 
 print_section_header "Model Training"
 
@@ -53,7 +73,7 @@ print_section_header "Model Training"
 start_time=$(date +%s)
 
 # Run training directly 
-python ${BASE_PATH}/transformer/train.py \
+python -m transformer.train \
     --n_layer=$N_LAYER \
     --n_head=$N_HEAD \
     --n_embd=$EMBD_DIM \

@@ -7,7 +7,7 @@
 #SBATCH --gres=gpu:1          
 #SBATCH --cpus-per-task=16
 #SBATCH --time=01:00:00  
-#SBATCH --mem=150GB
+#SBATCH --mem=100GB
 #SBATCH --partition=kempner_requeue
 
 # Source common functions
@@ -27,33 +27,51 @@ EMBD_DIM=${7:-64}
 BATCH_SIZE=${8:-256}
 DOMAIN_CONFIG=${9:-"domains.ini"}
 DOMAIN_ID=${10:-"B"}
+USE_STANDARD_DATASET=${11:-"false"}
+DEBUG_MODE=${12:-"false"}
 
 export DOMAIN_ID=$DOMAIN_ID
 export DOMAIN_CONFIG=$DOMAIN_CONFIG
-export EXPERIMENT_TYPE="basic"
+export EXPERIMENT_TYPE=${EXPERIMENT_TYPE:-"basic"}  # Use inherited value or default to basic
+export DEBUG_MODE=$DEBUG_MODE
+
+# Setup standard dataset if requested
+setup_standard_dataset \
+    --use-standard-dataset "$USE_STANDARD_DATASET" \
+    --domain-config "$DOMAIN_CONFIG" \
+    --domain-id "$DOMAIN_ID" \
+    --multiple-domains "false" \
+    --train-steps "$TRAIN_STEPS" \
+    --val-steps "1000000" \
+    --run-number "$RUN_NUMBER"
 
 # Export run number
 export RUN_NUMBER
 echo "Using run number: $RUN_NUMBER"
 
-# Data generation and basic evaluation
+# Data generation
 print_section_header "Data Generation"
-python ${BASE_PATH}/synthetic_data_generation/generate_data.py \
-    --run $RUN_NUMBER \
-    --domain_id $DOMAIN_ID \
-    --num_steps_val=1_000_000 \
-    --no_overwrite \
-    --num_steps_train=$TRAIN_STEPS \
-    --config_file "$DOMAIN_CONFIG" \
-    --multiple_domains
-python ${BASE_PATH}/evaluation/basic_evaluation.py --run $RUN_NUMBER
-python ${BASE_PATH}/evaluation/graphs_on_trial_block_transitions.py --run $RUN_NUMBER
+if [ "$USE_STANDARD_DATASET" = "true" ]; then
+    generate_standard_dataset
+else
+    python ${BASE_PATH}/synthetic_data_generation/generate_data.py \
+        --run $RUN_NUMBER \
+        --domain_id $DOMAIN_ID \
+        --num_steps_train=$TRAIN_STEPS \
+        --num_steps_val=1_000_000 \
+        --no_overwrite \
+        --config_file "$DOMAIN_CONFIG"
+    
+    # Run evaluation for individual datasets
+    python ${BASE_PATH}/evaluation/basic_evaluation.py --run $RUN_NUMBER
+    python ${BASE_PATH}/evaluation/graphs_on_trial_block_transitions.py --run $RUN_NUMBER
+fi
 
 # Setup distributed environment
 setup_distributed_environment
 
 print_section_header "Model Training"
-srun --cpu-bind=none python ${BASE_PATH}/transformer/train.py \
+srun --cpu-bind=none python -m transformer.train \
     --epochs=$EPOCHS \
     --run $RUN_NUMBER \
     --batch_size=$BATCH_SIZE \
@@ -91,7 +109,7 @@ LEARNING_COMMANDS=(
 )
 
 # Run learning commands (will run sequentially if only 1 GPU)
-run_on_gpus "${LEARNING_COMMANDS[@]}"
+# run_on_gpus "${LEARNING_COMMANDS[@]}"
 
 print_section_header "Interpretability"
 python ${BASE_PATH}/interpretability/interp_sampler.py --run $RUN_NUMBER

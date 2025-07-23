@@ -13,15 +13,16 @@ The main class `AttributionAnalyzer` provides a unified interface for all attrib
 """
 
 from contextlib import contextmanager
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import torch
 import torch.nn.functional as F
-from analyzer import BaseAnalyzer
 from matplotlib.lines import Line2D
+
+from interpretability.core.base import BaseAnalyzer
 
 sns.set_theme(
     style='ticks',
@@ -307,13 +308,6 @@ class AttributionAnalyzer(BaseAnalyzer):
             if layer_activations[layer_name] and layer_gradients[layer_name]:
                 activation = layer_activations[layer_name][0]
                 gradient = layer_gradients[layer_name][0]
-                
-                # Debug prints for signs
-                # act_sign = torch.sign(activation).float().mean().item()
-                # grad_sign = torch.sign(gradient).float().mean().item()
-                # print(f"{layer_name}:")
-                # print(f"  Activation sign (mean): {act_sign:.3f}")
-                # print(f"  Gradient sign (mean): {grad_sign:.3f}")
                 
                 attributions[layer_name] = self._compute_layer_attribution(
                     activation,

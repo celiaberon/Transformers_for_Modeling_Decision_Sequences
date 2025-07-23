@@ -1,17 +1,15 @@
 import os
-import sys
 from dataclasses import dataclass
 from datetime import timedelta
-import torch.distributed as dist
 
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 from torch.nn import functional as F
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.file_management import get_experiment_file, read_sequence
 
-# Set random seed for reproducibility
+
 seed = 200
 torch.manual_seed(seed)
 if torch.cuda.is_available():
@@ -176,6 +174,7 @@ class GPT(nn.Module):
         if return_residual:
             residual_snapshot = x.clone().detach()
 
+        # Unembedding: hidden @ wte.weight.T → (vocab_size,)
         logits = self.lm_head(self.transformer.ln_f(x))
         loss = self.calculate_loss(logits, targets, **kwargs)
         

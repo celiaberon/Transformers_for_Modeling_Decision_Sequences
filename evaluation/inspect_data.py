@@ -6,10 +6,10 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../')))
 import utils.file_management as fm
 from utils.parse_data import (add_sequence_columns, get_data_filenames,
                               load_predictions, parse_simulated_data)
+from utils.model_utils import parse_model_info
 
 logger = None
 
@@ -120,7 +120,7 @@ def match_by_base_sequence(events, sequences, base_T=3, min_count=20):
 
 def compare_model_performance(run, train_events, model_name=None, minT=2, show_plot=True):
 
-    model_info = fm.parse_model_info(run, model_name=model_name)
+    model_info = parse_model_info(run, model_name=model_name)
 
     if model_name is None:
         model_name = model_info['model_name']

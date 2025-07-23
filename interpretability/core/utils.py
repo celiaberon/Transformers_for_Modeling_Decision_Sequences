@@ -10,7 +10,6 @@ import torch.nn.functional as F
 from sklearn.decomposition import PCA
 from sklearn.metrics.pairwise import cosine_similarity
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import utils.file_management as fm
 import utils.parse_data as parse
 from utils.checkpoint_processing import (add_checkpoint_colorbar,
@@ -28,6 +27,15 @@ def tokenize(sequences):
     else:
         return torch.tensor([[stoi[char] for char in sequence]
                              for sequence in sequences])
+
+
+def generate_random_sequences(num_sequences, length, vocab):
+    """Generate up to the specified number of unique sequences from the given vocabulary."""
+    unique_sequences = set()  # Use a set to store unique sequences
+    while len(unique_sequences) < num_sequences:
+        sequence = ''.join(np.random.choice(vocab, length))
+        unique_sequences.add(sequence)  # Add the sequence to the set (duplicates are ignored)
+    return list(unique_sequences)  # Convert the set back to a list
 
 
 def get_common_sequences(T, run=None, events=None, min_count=50, k=10):

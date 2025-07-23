@@ -1,0 +1,349 @@
+=======================================================
+Starting experiment: l1_h1_e100_c6_d4
+Model config: 1 layers, 1 heads, 4 embedding dim
+Training config: 100 epochs, 100000 train steps, batch size 256
+Context length: 6
+Domain config: three_domains.ini
+Domain ID: A
+Run number: 1
+=======================================================
+Using individual datasets for each run
+Using run number: 1
+--------------------------------------------------------------------------------
+
+Data Generation
+
+--------------------------------------------------------------------------------
+generate_data.py
+
+Domain ID: A
+Config file: three_domains.ini
+{ 'A': { 'agent': { 'alpha': 0.56,
+                    'beta': 1.84,
+                    'policy': 'probability_matching',
+                    'tau': 1.25},
+         'environment': { 'high_reward_prob': 0.9,
+                          'low_reward_prob': 0.1,
+                          'transition_prob': 0.02}}}
+--------------------------------------------------------------------------------
+basic_evaluation.py
+
+--------------------------------------------------------------------------------
+graphs_on_trial_block_transitions.py
+
+saved block position behavior to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/agent_behavior/bpos_v.png
+saved conditional probabilities for 2 trials to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/agent_behavior/cond_switch_2vA.png
+saved conditional probabilities for 3 trials to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/agent_behavior/cond_switch_3vA.png
+WORLD_SIZE=1
+MASTER_PORT=12355
+MASTER_ADDR=holygpu8a19203
+--------------------------------------------------------------------------------
+
+Model Training
+
+--------------------------------------------------------------------------------
+train.py
+
+0 None None 1
+DDP setup: rank=0, local_rank=0, world_size=1
+read in 100000 tokens from /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs/behavior_run_1tr.txt
+read in 1000000 tokens from /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs/behavior_run_1v.txt
+Checkpoint steps (14): [2, 6, 15, 39, 97, 244, 610, 1525, 3000, 3000, 3000, 3000, 3000, 3000]
+num decayed parameter tensors: 6, with 232 parameters
+num non-decayed parameter tensors: 10, with 60 parameters
+Rank: 0, Local Rank: 0, World Size: 1
+Rank: 0, tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+DDP WORLD SIZE:  1
+1.3832895755767822
+1.3482309579849243
+1.2596696615219116
+1.1209193468093872
+0.9494098424911499
+0.7938494086265564
+0.7111014127731323
+0.6797318458557129
+0.6598196029663086
+0.6534752249717712
+0.6507266163825989
+0.6491347551345825
+0.6481723785400391
+0.6473207473754883
+0.6468166708946228
+0.6464909315109253
+0.6462242007255554
+0.6460325717926025
+0.645763635635376
+0.6455388069152832
+0.6453577876091003
+0.6451491117477417
+0.6448497772216797
+0.6447071433067322
+0.6442596912384033
+0.6440310478210449
+0.6436265110969543
+0.6433700919151306
+0.6429733633995056
+0.6425860524177551
+0.6422017812728882
+0.6418384909629822
+0.641476035118103
+0.6410946846008301
+0.6406673192977905
+0.6402380466461182
+0.6397982239723206
+0.639350175857544
+0.6389302611351013
+0.6385512351989746
+0.6382308602333069
+0.6379522681236267
+0.6377277970314026
+0.6375163197517395
+0.6373520493507385
+0.6371846795082092
+0.6370620131492615
+0.6369300484657288
+0.6368269324302673
+0.6367262601852417
+0.6366366147994995
+0.6365551352500916
+0.6364704370498657
+0.6363973617553711
+0.6363154649734497
+0.6362635493278503
+0.636193573474884
+0.6361512541770935
+0.6360878944396973
+0.6360365152359009
+0.635987401008606
+0.6359512805938721
+0.6358981132507324
+0.6358678340911865
+0.6358340978622437
+0.635806679725647
+0.6357712149620056
+0.6357422471046448
+0.6357166767120361
+0.6356980204582214
+0.6356686949729919
+0.6356456875801086
+0.6356325149536133
+0.6356043219566345
+0.6355975866317749
+0.6355745792388916
+0.635553777217865
+0.6355367302894592
+0.6355250477790833
+0.6355030536651611
+0.6354954242706299
+0.6354861259460449
+0.6354778409004211
+0.6354562640190125
+0.6354408264160156
+0.635430097579956
+0.6354108452796936
+0.6353963613510132
+0.6353857517242432
+0.635373592376709
+0.6353751420974731
+0.63536536693573
+0.635354220867157
+0.6353436708450317
+0.6353238224983215
+0.6353232264518738
+0.6353114247322083
+0.6353098750114441
+0.6353039145469666
+0.635297417640686
+0.6352877616882324
+0.6352661848068237
+Detected 1 GPU(s) for execution
+--------------------------------------------------------------------------------
+
+Transformer Evaluation
+
+Using cuda device
+--------------------------------------------------------------------------------
+guess_using_transformer.py
+
+read in 1000000 tokens from /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs/behavior_run_1v.txt
+--------------------------------------------------------------------------------
+evaluate_transformer_guess.py
+
+--------------------------------------------------------------------------------
+graphs_transformer_vs_ground_truth.py
+
+model_name:  model_seen9M
+saved block position behavior to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/predictions/bpos_model_seen9M_v.png
+plotting conditional switching eval
+saved conditional probabilities for 2 trials to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/predictions/cond_switch_2model_seen9M_vA.png
+saved conditional probabilities for 3 trials to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/predictions/cond_switch_3model_seen9M_vA.png
+--------------------------------------------------------------------------------
+inspect_data.py
+
+--------------------------------------------------------------------------------
+
+Processing Checkpoints
+
+Found 14 checkpoints to process
+--------------------------------------------------------------------------------
+
+Processing checkpoint: model_seen9M_cp0 on GPU 0
+
+--------------------------------------------------------------------------------
+
+Processing checkpoint: model_seen9M_cp12000 on GPU 0
+
+Waiting for previous job on GPU 0 to finish...
+Using cuda device
+--------------------------------------------------------------------------------
+guess_using_transformer.py
+
+read in 1000000 tokens from /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs/behavior_run_1v.txt
+--------------------------------------------------------------------------------
+
+Processing checkpoint: model_seen9M_cp15000 on GPU 0
+
+Waiting for previous job on GPU 0 to finish...
+Using cuda device
+--------------------------------------------------------------------------------
+guess_using_transformer.py
+
+read in 1000000 tokens from /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs/behavior_run_1v.txt
+--------------------------------------------------------------------------------
+
+Processing checkpoint: model_seen9M_cp1525 on GPU 0
+
+Waiting for previous job on GPU 0 to finish...
+Using cuda device
+--------------------------------------------------------------------------------
+guess_using_transformer.py
+
+read in 1000000 tokens from /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs/behavior_run_1v.txt
+--------------------------------------------------------------------------------
+
+Processing checkpoint: model_seen9M_cp15 on GPU 0
+
+Waiting for previous job on GPU 0 to finish...
+Using cuda device
+--------------------------------------------------------------------------------
+guess_using_transformer.py
+
+read in 1000000 tokens from /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs/behavior_run_1v.txt
+--------------------------------------------------------------------------------
+
+Processing checkpoint: model_seen9M_cp18000 on GPU 0
+
+Waiting for previous job on GPU 0 to finish...
+Using cuda device
+--------------------------------------------------------------------------------
+guess_using_transformer.py
+
+read in 1000000 tokens from /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs/behavior_run_1v.txt
+--------------------------------------------------------------------------------
+
+Processing checkpoint: model_seen9M_cp244 on GPU 0
+
+Waiting for previous job on GPU 0 to finish...
+Using cuda device
+--------------------------------------------------------------------------------
+guess_using_transformer.py
+
+read in 1000000 tokens from /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs/behavior_run_1v.txt
+--------------------------------------------------------------------------------
+
+Processing checkpoint: model_seen9M_cp3000 on GPU 0
+
+Waiting for previous job on GPU 0 to finish...
+Using cuda device
+--------------------------------------------------------------------------------
+guess_using_transformer.py
+
+read in 1000000 tokens from /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs/behavior_run_1v.txt
+--------------------------------------------------------------------------------
+
+Processing checkpoint: model_seen9M_cp39 on GPU 0
+
+Waiting for previous job on GPU 0 to finish...
+Using cuda device
+--------------------------------------------------------------------------------
+guess_using_transformer.py
+
+read in 1000000 tokens from /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs/behavior_run_1v.txt
+--------------------------------------------------------------------------------
+
+Processing checkpoint: model_seen9M_cp6000 on GPU 0
+
+Waiting for previous job on GPU 0 to finish...
+Using cuda device
+--------------------------------------------------------------------------------
+guess_using_transformer.py
+
+read in 1000000 tokens from /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs/behavior_run_1v.txt
+--------------------------------------------------------------------------------
+
+Processing checkpoint: model_seen9M_cp610 on GPU 0
+
+Waiting for previous job on GPU 0 to finish...
+Using cuda device
+--------------------------------------------------------------------------------
+guess_using_transformer.py
+
+read in 1000000 tokens from /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs/behavior_run_1v.txt
+--------------------------------------------------------------------------------
+
+Processing checkpoint: model_seen9M_cp6 on GPU 0
+
+Waiting for previous job on GPU 0 to finish...
+Using cuda device
+--------------------------------------------------------------------------------
+guess_using_transformer.py
+
+read in 1000000 tokens from /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs/behavior_run_1v.txt
+--------------------------------------------------------------------------------
+
+Processing checkpoint: model_seen9M_cp9000 on GPU 0
+
+Waiting for previous job on GPU 0 to finish...
+Using cuda device
+--------------------------------------------------------------------------------
+guess_using_transformer.py
+
+read in 1000000 tokens from /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs/behavior_run_1v.txt
+--------------------------------------------------------------------------------
+
+Processing checkpoint: model_seen9M_cp97 on GPU 0
+
+Waiting for previous job on GPU 0 to finish...
+Using cuda device
+--------------------------------------------------------------------------------
+guess_using_transformer.py
+
+read in 1000000 tokens from /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs/behavior_run_1v.txt
+Using cuda device
+--------------------------------------------------------------------------------
+guess_using_transformer.py
+
+read in 1000000 tokens from /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/seqs/behavior_run_1v.txt
+--------------------------------------------------------------------------------
+
+Checkpoint Comparison
+
+Saved checkpoint comparison plot to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/predictions/bpos_checkpoints_model_seen9M.png
+Saved confusion matrix plot to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/predictions/cm_checkpoints_colnorm_model_seen9M_A.png
+--------------------------------------------------------------------------------
+
+Learning Analysis
+
+--------------------------------------------------------------------------------
+
+Interpretability
+
+Using cuda device
+Found 15 models for run 1
+Warning: rlRll not found in frequent events
+Warning: rlLlR not found in frequent events
+Warning: RlLLl not found in frequent events
+Warning: lLLrR not found in frequent events
+Warning: lLrLr not found in frequent events
+Warning: LLrlR not found in frequent events
+Experiment completed: run1

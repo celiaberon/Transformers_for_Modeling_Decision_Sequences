@@ -7,9 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import utils.file_management as fm
-from transformer import GPT
+from transformer.models import GPT
 
 def plot_attention_matrix(attention_matrix, axis, vocab, tokens=None, title=None):
     """Plot attention matrix heatmap with token labels"""

@@ -2,26 +2,21 @@ import os
 import sys
 from typing import Dict, List, Optional, Tuple
 
+import interpretability.core.utils as interp
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
-
-# Add parent directory to path for imports
-sys.path.append(os.path.abspath('../'))
-
-# Local imports
-
-import interp_helpers as interp
-from feature_attribution import AttributionAnalyzer
+from interpretability.analyzers.attribution import AttributionAnalyzer
 
 import evaluation.inspect_data as inspect
 import utils.file_management as fm
+import utils.model_utils as model_utils
 import utils.parse_data as parse
-from interpretability.activations import EmbeddingAnalyzer, MLPAnalyzer
-from interpretability.analyzer import DimensionalityReductionConfig
-from interpretability.attention_helpers import AttentionAnalyzer
+from interpretability.analyzers.activations import EmbeddingAnalyzer, MLPAnalyzer
+from interpretability.core.config import DimensionalityReductionConfig
+from interpretability.analyzers.attention import AttentionAnalyzer
 
 # Set seaborn theme
 sns.set_theme(
@@ -92,7 +87,7 @@ def load_model_and_config(
     """
     run = run or fm.get_latest_run()
     initialize_logger(run)
-    model, model_info, config = parse.load_trained_model(
+    model, model_info, config = model_utils.load_trained_model(
         run,
         model_name=model_name,
         device=device,
@@ -354,48 +349,20 @@ def analyze_mlp_dimensionality(
     run: int,
     test_sequences: Dict[str, List[str]]
 ) -> None:
-    """Analyze MLP dimensionality reduction.
+    """Analyze MLP dimensionality using PCA.
     
     Args:
         model: Model to analyze
         sequences: List of sequences to analyze
-        counts: List of sequence counts
+        counts: List of counts for each sequence
         run: Run number
         test_sequences: Dictionary of test sequences to analyze
     """
     mlp_analyzer = MLPAnalyzer(model, model.config)
     
-    # Analyze overall sequences
-    dr_config = DimensionalityReductionConfig(
-        token_pos=-1,
-        sequence_method='token',
-        n_components=4
-    )
+    # Use the first layer's components for analysis (layer 0)
+    mlp_components = mlp_analyzer.layers
     
-    for sm in ['token', 'concat']:
-        dr_config.sequence_method = sm
-        fig, axs = mlp_analyzer.visualizer.plot_pca_by_layer(
-            sequences, dr_config, counts=counts
-        )
-        fig_path = fm.get_experiment_file(
-            f'mlp_pca_{sm}.png', run, subdir='interp'
-        )
-        fig.savefig(fig_path, bbox_inches='tight')
-        plt.close()
-    
-    dr_config.method = 'tsne'
-    for sm in ['token', 'concat']:
-        dr_config.sequence_method = sm
-        fig, axs = mlp_analyzer.visualizer.plot_pca_by_layer(
-            sequences, dr_config, counts=counts, variance_explained=False
-        )
-        fig_path = fm.get_experiment_file(
-            f'mlp_tsne_{sm}.png', run, subdir='interp'
-        )
-        fig.savefig(fig_path, bbox_inches='tight')
-        plt.close()
-
-    # Analyze test sequences
     for i, seq in test_sequences.items():
         dr_config = DimensionalityReductionConfig(
             token_pos=-1,
@@ -404,7 +371,7 @@ def analyze_mlp_dimensionality(
             method='pca'
         )
         fig, axs = mlp_analyzer.visualizer.plot_pca_across_trials(
-            sequences, seq, ['input', 'gelu', 'output'], dr_config
+            sequences, seq, mlp_components, dr_config
         )
         fig_path = fm.get_experiment_file(
             f'mlp_pca_last_token.png', run, subdir=f'interp/bt_{i}'
@@ -419,7 +386,7 @@ def analyze_mlp_dimensionality(
             method='pca'
         )
         fig, axs = mlp_analyzer.visualizer.plot_pca_across_trials(
-            sequences, seq, ['input', 'gelu', 'output'], dr_config
+            sequences, seq, mlp_components, dr_config
         )
         fig_path = fm.get_experiment_file(
             f'mlp_pca_concat.png', run, subdir=f'interp/bt_{i}'
@@ -444,7 +411,7 @@ def analyze_test_sequences(
     """
     embedding_analyzer = EmbeddingAnalyzer(model, model.config)
     attention_analyzer = AttentionAnalyzer(model, model.config)
-    attribution_analyzer = AttributionAnalyzer(model, method='inputs')
+    attribution_analyzer = AttributionAnalyzer(model, model.config, method='inputs')
     
     for i, seq in test_sequences.items():
         # Embedding analysis
@@ -493,7 +460,7 @@ def analyze_test_sequences(
         plt.close()
 
         # Attention analysis
-        fig = attention_analyzer.plot_attention_multiple_sequences(
+        fig = attention_analyzer.visualizer.plot_attention_multiple_sequences(
             seq_, max_sequences=10
         )
         fig_path = fm.get_experiment_file(
@@ -502,7 +469,7 @@ def analyze_test_sequences(
         fig.savefig(fig_path, bbox_inches='tight')
         plt.close()
         
-        fig = attention_analyzer.plot_attention_multiple_sequences(
+        fig = attention_analyzer.visualizer.plot_attention_multiple_sequences(
             seq_[1:],
             max_sequences=10,
             as_diff=True,
@@ -519,7 +486,7 @@ def analyze_test_sequences(
             sequence_method='token',
             n_components=2
         )
-        fig = attention_analyzer.plot_attention_features(
+        fig = attention_analyzer.visualizer.plot_attention_features(
             sequences, seq, dr_config
         )
         fig_path = fm.get_experiment_file(
@@ -586,36 +553,31 @@ def analyze_maximal_activations(
     )
     
     mlp_max_activations = {}
-    fig, axes_dict = mlp_analyzer.visualizer.create_mlp_visualization()
-    
-    for layer_name, axes in axes_dict.items():
+    for layer_name in mlp_analyzer.layers:
         mlp_max_activations[layer_name] = mlp_analyzer.find_maximal_activations(
             mlp_last_pos_by_layer, layer_name, sequences
         )
-        
-        for neuron_idx, ax in enumerate(axes):
-            ax, token_counts = mlp_analyzer.analyze_neuron_patterns(
-                mlp_max_activations, layer_name, neuron_idx,
-                ax=ax, cbar=neuron_idx == (len(axes)-1)
-            )
-            avg_sequence = mlp_analyzer.get_average_sequence(
-                token_counts, single_threshold=0, joint_threshold=0
-            )
-            avg_sequence_thresholded = mlp_analyzer.get_average_sequence(
-                token_counts, single_threshold=0.6, joint_threshold=0.4
-            )
-            ax.set(
-                title=f"Neuron {neuron_idx+1}\n{avg_sequence}\n{avg_sequence_thresholded}",
-                xticks=[]
-            )
-            ax.set_aspect(1)
-            if neuron_idx > 0:
-                ax.set(ylabel='', yticks=[])
-            ax.set(xlabel='')
-    
-    fig_path = fm.get_experiment_file('mlp_max_activations.png', run, subdir='interp')
-    fig.savefig(fig_path, bbox_inches='tight')
-    plt.close()
+
+    for block in range(model.config.n_layer):
+        mlp_max_activations_single_block = mlp_analyzer.get_activations_by_block(mlp_max_activations, block_idx=block)
+
+        fig, axes_dict = mlp_analyzer.visualizer.create_mlp_visualization()
+
+        for layer_name, axes in axes_dict.items():
+
+            for neuron_idx, ax in enumerate(axes):
+                ax, token_counts = mlp_analyzer.analyze_neuron_patterns(mlp_max_activations_single_block, layer_name, neuron_idx, ax=ax, cbar=neuron_idx == (len(axes)-1))
+                avg_sequence = mlp_analyzer.get_average_sequence(token_counts, single_threshold=0, joint_threshold=0)
+                avg_sequence_thresholded = mlp_analyzer.get_average_sequence(token_counts, single_threshold=0.6, joint_threshold=0.4)
+                ax.set(title=f"Neuron {neuron_idx+1}\n{avg_sequence}\n{avg_sequence_thresholded}", xticks=[])
+                ax.set_aspect(1)
+                if neuron_idx > 0:
+                    ax.set(ylabel='', yticks=[])
+                ax.set(xlabel='')
+
+        fig_path = fm.get_experiment_file(f'mlp_max_activations_block_{block}.png', run, subdir='interp')
+        fig.savefig(fig_path, bbox_inches='tight')
+        plt.close()
     
     # Embedding analysis
     embedding_analyzer = EmbeddingAnalyzer(model, model.config)

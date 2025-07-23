@@ -5,13 +5,11 @@ import time
 
 import torch
 
-# Add the project root directory to Python path
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../../')))
 from torch.nn import functional as F
 
 import utils.file_management as fm
-from transformer.transformer import DataLoader
-from utils.parse_data import load_trained_model
+from transformer.models import DataLoader
+from utils.model_utils import load_trained_model
 
 seed = 200
 random.seed(seed)
@@ -153,11 +151,11 @@ def main(run=None, model_name=None):
     pred_tokens = [itos[idx.item()] for idx in predictions['pred_next']]
 
     # Write predictions to file
-    pred_file = fm.get_experiment_file(f"pred_{model_name}.txt", run, subdir='seqs')
+    pred_file = fm.get_experiment_file(f"pred_{model_name}.txt", run, subdir='preds')
     fm.write_sequence(pred_file, pred_tokens)
 
     # For downstream analysis, we need to save the indices for alignment
-    indices_file = fm.get_experiment_file(f"pred_indices_{model_name}.txt", run, subdir='seqs')
+    indices_file = fm.get_experiment_file(f"pred_indices_{model_name}.txt", run, subdir='preds')
     with open(indices_file, 'w') as f:
         for idx in predictions['y_indices']:
             f.write(f"{idx.item()}\n")

@@ -1,0 +1,100 @@
+2025-07-16 17:40:19 - job_24941484 - inference - Starting inference with model: None
+2025-07-16 17:40:19 - job_24941484 - inference - Generating predictions using batch approach with context length 6
+2025-07-16 17:40:20 - job_24941484 - inference - Generated predictions for 987136 tokens in 1.27 seconds
+2025-07-16 17:40:23 - job_24941484 - inference - Guess metadata saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/metadata.txt
+2025-07-16 17:40:23 - job_24941484 - inference - Model predictions saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_model_seen9M.txt
+2025-07-16 17:40:23 - job_24941484 - inference - Prediction indices saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_indices_model_seen9M.txt
+
+Analysis for Domain A
+
+                                     Accuracy: 66.45% (595512/896167 correct predictions)
+          Choice only Accuracy (Right/Left same): 87.80%
+               Reward Accuracy (Upper/Lower same): 69.96%
+
+Switch Percentage (model): 8.77%
+Switch Percentage (ground truth): 8.46%
+2025-07-16 17:41:58 - job_24941484 - graphs_transformer_vs_ground_truth - Percent of trials with a switch: 8.66%
+2025-07-16 17:43:38 - job_24941484 - inference - Starting inference with model: model_seen9M_cp0
+2025-07-16 17:43:38 - job_24941484 - inference - Generating predictions using batch approach with context length 6
+2025-07-16 17:43:40 - job_24941484 - inference - Generated predictions for 987136 tokens in 1.29 seconds
+2025-07-16 17:43:43 - job_24941484 - inference - Guess metadata saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/metadata.txt
+2025-07-16 17:43:43 - job_24941484 - inference - Model predictions saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_model_seen9M_cp0.txt
+2025-07-16 17:43:43 - job_24941484 - inference - Prediction indices saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_indices_model_seen9M_cp0.txt
+2025-07-16 17:43:47 - job_24941484 - inference - Starting inference with model: model_seen9M_cp12000
+2025-07-16 17:43:48 - job_24941484 - inference - Generating predictions using batch approach with context length 6
+2025-07-16 17:43:49 - job_24941484 - inference - Generated predictions for 987136 tokens in 1.33 seconds
+2025-07-16 17:43:52 - job_24941484 - inference - Guess metadata saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/metadata.txt
+2025-07-16 17:43:52 - job_24941484 - inference - Model predictions saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_model_seen9M_cp12000.txt
+2025-07-16 17:43:52 - job_24941484 - inference - Prediction indices saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_indices_model_seen9M_cp12000.txt
+2025-07-16 17:43:56 - job_24941484 - inference - Starting inference with model: model_seen9M_cp15000
+2025-07-16 17:43:57 - job_24941484 - inference - Generating predictions using batch approach with context length 6
+2025-07-16 17:43:58 - job_24941484 - inference - Generated predictions for 987136 tokens in 1.29 seconds
+2025-07-16 17:44:01 - job_24941484 - inference - Guess metadata saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/metadata.txt
+2025-07-16 17:44:01 - job_24941484 - inference - Model predictions saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_model_seen9M_cp15000.txt
+2025-07-16 17:44:01 - job_24941484 - inference - Prediction indices saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_indices_model_seen9M_cp15000.txt
+2025-07-16 17:44:06 - job_24941484 - inference - Starting inference with model: model_seen9M_cp1525
+2025-07-16 17:44:06 - job_24941484 - inference - Generating predictions using batch approach with context length 6
+2025-07-16 17:44:07 - job_24941484 - inference - Generated predictions for 987136 tokens in 1.30 seconds
+2025-07-16 17:44:10 - job_24941484 - inference - Guess metadata saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/metadata.txt
+2025-07-16 17:44:10 - job_24941484 - inference - Model predictions saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_model_seen9M_cp1525.txt
+2025-07-16 17:44:10 - job_24941484 - inference - Prediction indices saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_indices_model_seen9M_cp1525.txt
+2025-07-16 17:44:15 - job_24941484 - inference - Starting inference with model: model_seen9M_cp15
+2025-07-16 17:44:15 - job_24941484 - inference - Generating predictions using batch approach with context length 6
+2025-07-16 17:44:16 - job_24941484 - inference - Generated predictions for 987136 tokens in 1.34 seconds
+2025-07-16 17:44:19 - job_24941484 - inference - Guess metadata saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/metadata.txt
+2025-07-16 17:44:19 - job_24941484 - inference - Model predictions saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_model_seen9M_cp15.txt
+2025-07-16 17:44:19 - job_24941484 - inference - Prediction indices saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_indices_model_seen9M_cp15.txt
+2025-07-16 17:44:24 - job_24941484 - inference - Starting inference with model: model_seen9M_cp18000
+2025-07-16 17:44:24 - job_24941484 - inference - Generating predictions using batch approach with context length 6
+2025-07-16 17:44:25 - job_24941484 - inference - Generated predictions for 987136 tokens in 1.31 seconds
+2025-07-16 17:44:28 - job_24941484 - inference - Guess metadata saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/metadata.txt
+2025-07-16 17:44:28 - job_24941484 - inference - Model predictions saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_model_seen9M_cp18000.txt
+2025-07-16 17:44:28 - job_24941484 - inference - Prediction indices saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_indices_model_seen9M_cp18000.txt
+2025-07-16 17:44:34 - job_24941484 - inference - Starting inference with model: model_seen9M_cp244
+2025-07-16 17:44:34 - job_24941484 - inference - Generating predictions using batch approach with context length 6
+2025-07-16 17:44:35 - job_24941484 - inference - Generated predictions for 987136 tokens in 1.29 seconds
+2025-07-16 17:44:38 - job_24941484 - inference - Guess metadata saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/metadata.txt
+2025-07-16 17:44:38 - job_24941484 - inference - Model predictions saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_model_seen9M_cp244.txt
+2025-07-16 17:44:38 - job_24941484 - inference - Prediction indices saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_indices_model_seen9M_cp244.txt
+2025-07-16 17:44:45 - job_24941484 - inference - Starting inference with model: model_seen9M_cp3000
+2025-07-16 17:44:45 - job_24941484 - inference - Generating predictions using batch approach with context length 6
+2025-07-16 17:44:46 - job_24941484 - inference - Generated predictions for 987136 tokens in 1.28 seconds
+2025-07-16 17:44:49 - job_24941484 - inference - Guess metadata saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/metadata.txt
+2025-07-16 17:44:49 - job_24941484 - inference - Model predictions saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_model_seen9M_cp3000.txt
+2025-07-16 17:44:49 - job_24941484 - inference - Prediction indices saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_indices_model_seen9M_cp3000.txt
+2025-07-16 17:44:54 - job_24941484 - inference - Starting inference with model: model_seen9M_cp39
+2025-07-16 17:44:54 - job_24941484 - inference - Generating predictions using batch approach with context length 6
+2025-07-16 17:44:55 - job_24941484 - inference - Generated predictions for 987136 tokens in 1.26 seconds
+2025-07-16 17:44:58 - job_24941484 - inference - Guess metadata saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/metadata.txt
+2025-07-16 17:44:58 - job_24941484 - inference - Model predictions saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_model_seen9M_cp39.txt
+2025-07-16 17:44:58 - job_24941484 - inference - Prediction indices saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_indices_model_seen9M_cp39.txt
+2025-07-16 17:45:03 - job_24941484 - inference - Starting inference with model: model_seen9M_cp6000
+2025-07-16 17:45:03 - job_24941484 - inference - Generating predictions using batch approach with context length 6
+2025-07-16 17:45:05 - job_24941484 - inference - Generated predictions for 987136 tokens in 1.26 seconds
+2025-07-16 17:45:07 - job_24941484 - inference - Guess metadata saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/metadata.txt
+2025-07-16 17:45:07 - job_24941484 - inference - Model predictions saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_model_seen9M_cp6000.txt
+2025-07-16 17:45:07 - job_24941484 - inference - Prediction indices saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_indices_model_seen9M_cp6000.txt
+2025-07-16 17:45:12 - job_24941484 - inference - Starting inference with model: model_seen9M_cp610
+2025-07-16 17:45:12 - job_24941484 - inference - Generating predictions using batch approach with context length 6
+2025-07-16 17:45:14 - job_24941484 - inference - Generated predictions for 987136 tokens in 1.28 seconds
+2025-07-16 17:45:17 - job_24941484 - inference - Guess metadata saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/metadata.txt
+2025-07-16 17:45:17 - job_24941484 - inference - Model predictions saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_model_seen9M_cp610.txt
+2025-07-16 17:45:17 - job_24941484 - inference - Prediction indices saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_indices_model_seen9M_cp610.txt
+2025-07-16 17:45:21 - job_24941484 - inference - Starting inference with model: model_seen9M_cp6
+2025-07-16 17:45:21 - job_24941484 - inference - Generating predictions using batch approach with context length 6
+2025-07-16 17:45:23 - job_24941484 - inference - Generated predictions for 987136 tokens in 1.25 seconds
+2025-07-16 17:45:26 - job_24941484 - inference - Guess metadata saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/metadata.txt
+2025-07-16 17:45:26 - job_24941484 - inference - Model predictions saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_model_seen9M_cp6.txt
+2025-07-16 17:45:26 - job_24941484 - inference - Prediction indices saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_indices_model_seen9M_cp6.txt
+2025-07-16 17:45:30 - job_24941484 - inference - Starting inference with model: model_seen9M_cp9000
+2025-07-16 17:45:31 - job_24941484 - inference - Generating predictions using batch approach with context length 6
+2025-07-16 17:45:32 - job_24941484 - inference - Generated predictions for 987136 tokens in 1.28 seconds
+2025-07-16 17:45:35 - job_24941484 - inference - Guess metadata saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/metadata.txt
+2025-07-16 17:45:35 - job_24941484 - inference - Model predictions saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_model_seen9M_cp9000.txt
+2025-07-16 17:45:35 - job_24941484 - inference - Prediction indices saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_indices_model_seen9M_cp9000.txt
+2025-07-16 17:45:40 - job_24941484 - inference - Starting inference with model: model_seen9M_cp97
+2025-07-16 17:45:40 - job_24941484 - inference - Generating predictions using batch approach with context length 6
+2025-07-16 17:45:42 - job_24941484 - inference - Generated predictions for 987136 tokens in 1.26 seconds
+2025-07-16 17:45:44 - job_24941484 - inference - Guess metadata saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/metadata.txt
+2025-07-16 17:45:44 - job_24941484 - inference - Model predictions saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_model_seen9M_cp97.txt
+2025-07-16 17:45:44 - job_24941484 - inference - Prediction indices saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/basic/run_1/preds/pred_indices_model_seen9M_cp97.txt

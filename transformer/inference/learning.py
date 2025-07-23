@@ -4,15 +4,14 @@ import sys
 import numpy as np
 import pandas as pd
 
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../../')))
-
-from evaluation.graph_helper import calc_bpos_behavior, plot_bpos_behavior
 import utils.file_management as fm
+from evaluation.graph_helper import calc_bpos_behavior, plot_bpos_behavior
 
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../../../behavior-helpers/')))
 from bh.visualization import plot_trials as pts
 
-from utils.parse_data import add_sequence_columns, parse_simulated_data, get_data_filenames
+from utils.parse_data import (add_sequence_columns, get_data_filenames,
+                              parse_simulated_data)
+from utils.model_utils import parse_model_info
 
 def initialize_logger(run):
     global logger
@@ -23,26 +22,26 @@ def load_predictions(run=None, model_name=None):
     """Load and process all prediction files for a run efficiently."""
 
     # Get model info from metadata.
-    model_info = fm.parse_model_info(run, model_name=model_name)
+    model_info = parse_model_info(run, model_name=model_name)
     if model_name is not None:
         assert model_info['model_name'] == model_name, 'did not recover correct model'
     model_name = model_info['model_name']
-    pred_file = fm.get_experiment_file(f"learning_{model_name}_val_preds.txt", run, subdir='seqs')
+    pred_file = fm.get_experiment_file(f"learning_{model_name}_val_preds.txt", run, subdir='preds')
 
     try:
         predictions = pd.read_csv(pred_file, sep='\t')
     except FileNotFoundError:
         # Permitting missing file in case training ended early but we still want to plot learning.
         print(f"File not found: {pred_file}")
-        seqs_dir = fm.get_experiment_file('', run, subdir='seqs')
-        pred_files = [f for f in os.listdir(seqs_dir) if f.startswith('learning') and f.endswith('val_preds.txt')]
+        preds_dir = fm.get_experiment_file('', run, subdir='preds')
+        pred_files = [f for f in os.listdir(preds_dir) if f.startswith('learning') and f.endswith('val_preds.txt')]
         if not pred_files:
-            raise FileNotFoundError("No prediction file found in seqs directory")
+            raise FileNotFoundError("No prediction file found in preds directory")
         elif len(pred_files) > 1:
             print("Multiple prediction files found in seqs directory, defaulting to first")
         else:
             print(f"Model metadata missing but found prediction file {pred_files[0]}")
-        pred_file = fm.get_experiment_file(pred_files[0], run, subdir='seqs') # Take first matching file
+        pred_file = fm.get_experiment_file(pred_files[0], run, subdir='preds') # Take first matching file
         model_name = pred_files[0].removeprefix('learning_').removesuffix('_val_preds.txt')
         print(f"Model name: {model_name}")
         model_info['model_name'] = model_name

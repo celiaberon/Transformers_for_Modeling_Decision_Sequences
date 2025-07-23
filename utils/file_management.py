@@ -6,13 +6,23 @@ import sys
 
 def get_latest_run():
     """
-    Find the highest numbered run directory.
+    Find the highest numbered run directory within the current experiment type.
     
     Returns:
         int: Highest run number, or 0 if no runs exist
     """
     base_path = os.path.dirname(os.path.dirname(__file__))
-    run_dirs = glob.glob(os.path.join(base_path, "experiments", "run_*"))
+    
+    # Check if we're in a comparison context
+    comparison_dir = os.environ.get('COMPARISON_DIR')
+    if comparison_dir:
+        run_dirs = glob.glob(os.path.join(comparison_dir, "run_*"))
+    else:
+        # Use experiment type to determine directory
+        experiment_type = os.environ.get('EXPERIMENT_TYPE', 'basic')
+        experiment_dir = os.path.join(base_path, "experiments", experiment_type)
+        run_dirs = glob.glob(os.path.join(experiment_dir, "run_*"))
+        
     if not run_dirs:
         return 0  # if no runs, return 0 so first run is 1
     return max([int(d.split('_')[-1]) for d in run_dirs])
@@ -31,7 +41,15 @@ def get_run_dir(run=None):
     base_path = os.path.dirname(os.path.dirname(__file__))
     if run is None:
         run = get_latest_run()
-    return os.path.join(base_path, "experiments", f"run_{run}")
+    
+    # Check if we're in a comparison context
+    comparison_dir = os.environ.get('COMPARISON_DIR')
+    if comparison_dir:
+        return os.path.join(comparison_dir, f"run_{run}")
+    else:
+        # Use experiment type to determine directory
+        experiment_type = os.environ.get('EXPERIMENT_TYPE', 'basic')
+        return os.path.join(base_path, "experiments", experiment_type, f"run_{run}")
 
 
 def ensure_run_dir(run, overwrite=True, subdir=None):
@@ -74,7 +92,7 @@ def get_file_path(filename, run=None, create_dir=False):
     return os.path.join(run_dir, filename)
 
 
-def get_experiment_file(filename_template, run=None, suffix='tr', subdir=None):
+def get_experiment_file(filename_template, run=None, suffix='tr', subdir=None, use_standard=False):
     """
     Get path to an experiment-specific file.
     
@@ -83,20 +101,57 @@ def get_experiment_file(filename_template, run=None, suffix='tr', subdir=None):
         run (int, optional): Run number. Defaults to latest run.
         suffix (str, optional): Dataset suffix ('tr' or 'v'). Defaults to 'tr'.
         subdir (str, optional): Subdirectory within the run directory. Defaults to None.
-    
+        use_standard (bool, optional): Whether to use the standard dataset directory. Defaults to False.
     Returns:
         str: Full path to the requested file
     """
     if run is None:
         run = get_latest_run()
     
-    run_dir = get_run_dir(run)
-    if subdir:
-        run_dir = os.path.join(run_dir, subdir)
+    # Check if we should use standard dataset (extra logic for metadata)
+    if use_standard or (subdir in ['seqs', 'agent_behavior']):
+        use_standard = (os.environ.get('USE_STANDARD_DATASET', 'false').lower()
+                        == 'true')
+    standard_dataset_dir = os.environ.get('STANDARD_DATASET_DIR')
+    dataset_identifier = os.environ.get('DATASET_IDENTIFIER', 'default')
     
-    os.makedirs(run_dir, exist_ok=True)  # Ensure the subdirectory exists
-    filename = filename_template.format(f"{run}{suffix}")
-    return os.path.join(run_dir, filename)
+    if use_standard and standard_dataset_dir and subdir in ['seqs', 'agent_behavior']:
+        # Use standard dataset directory for sequence files and agent_behavior
+        target_dir = os.path.join(standard_dataset_dir, subdir or '')
+        
+        # Transform the filename template to use dataset identifier instead of 
+        # run number e.g., 'behavior_run_{}.txt' -> 'behavior_{}_tr.txt'
+        if 'run_{}' in filename_template:
+            # Replace 'run_{}' with '{}' and append suffix
+            base_template = filename_template.replace('run_{}', '{}')
+            filename = base_template.format(f"{dataset_identifier}_{suffix}")
+        else:
+            # For agent_behavior files, add dataset identifier suffix
+            if subdir == 'agent_behavior':
+                # Split filename into base and extension
+                parts = filename_template.split('.')
+                if len(parts) > 1:
+                    base = '.'.join(parts[:-1])
+                    ext = parts[-1]
+                    filename = f"{base}_{dataset_identifier}.{ext}"
+                else:
+                    filename = f"{filename_template}_{dataset_identifier}"
+            else:
+                # Fallback for other templates
+                filename = filename_template.format(f"{dataset_identifier}_{suffix}")
+    elif use_standard and standard_dataset_dir and filename_template.startswith('metadata'):
+        filename = f'metadata_{dataset_identifier}.txt'
+        target_dir = standard_dataset_dir
+    else:
+        # Use regular run directory
+        run_dir = get_run_dir(run)
+        if subdir:
+            run_dir = os.path.join(run_dir, subdir)
+        target_dir = run_dir
+        filename = filename_template.format(f"{run}{suffix}")
+    
+    os.makedirs(target_dir, exist_ok=True)  # Ensure the directory exists
+    return os.path.join(target_dir, filename)
 
 
 def format_tokens(tokens):
@@ -125,63 +180,11 @@ def format_tokens(tokens):
     return f"{int(tokens)}{suffixes[index]}"
 
 
-def parse_model_info(run=None, model_name=None):
-    """
-    Parse model information from metadata.txt
-    
-    Args:
-        run (int, optional): Run number. If None, uses the latest run.
-        model_name (str, optional): Filter for specific model name
-        
-    Returns:
-        dict: Dictionary containing parsed model information
-    """
-    metadata_file = get_experiment_file("metadata.txt", run)
-    model_info = {
-        'model_name': None,
-        'tokens_seen': None,
-        'dataloader': {},
-        'config': {}
-    }
-    if model_name is not None:
-        model_name = model_name.split('_cp')[0]
-    found_model_name = False
-    with open(metadata_file, 'r') as f:
-        current_section = None
-        for line in f:
-            line = line.strip()
-            if not line: continue
-            
-            if line.startswith("Model name:"):
-                if found_model_name:
-                    return model_info  # early return if we don't want to move onto the next model
-                model_info['model_name'] = line.split(": ")[1]
-                if line.split(": ")[1] == model_name:
-                    found_model_name = True
-            elif line.startswith("Tokens seen:"):
-                model_info['tokens_seen'] = int(line.split(": ")[1].replace(',', ''))
-            elif line.startswith("Dataloader parameters:"):
-                current_section = 'dataloader'
-            elif line.startswith("GPTConfig parameters:"):
-                current_section = 'config'
-            elif current_section and ":" in line:
-                key, value = line.split(":", 1)
-                key = key.strip()
-                value = value.strip()
-                try:
-                    value = int(value)
-                except ValueError:
-                    pass
-                model_info[current_section][key] = value
-    
-    return model_info
-
-
 def get_domain_params(run=None, domain_id=None, suffix='tr'):
     """
     Get the parameters for a specific domain.
     """
-    metadata_file = get_experiment_file("metadata.txt", run)
+    metadata_file = get_experiment_file("metadata.txt", run, use_standard=True)
 
     with open(metadata_file, 'r') as f:
         data_section = None
@@ -198,26 +201,14 @@ def get_domain_params(run=None, domain_id=None, suffix='tr'):
                 if (current_section == 'agent_params') & (domain_id is domain):
                     params = line
                     return domain, eval(params)
+                elif (current_section == 'agent_params') & (domain_id is not domain):
+                    current_section = 'domain_id'
                 if line.startswith("Task parameters:"):
                     current_section = 'domain_id'
                 if line.startswith("Agent parameters:"):
                     current_section = 'agent_params'
                 
     return None
-
-
-def get_latest_model_name(run=None):
-    """
-    Get the name of the latest model based on tokens seen.
-    
-    Args:
-        run (int, optional): Run number. If None, uses the latest run.
-        
-    Returns:
-        str: Latest model name
-    """
-    model_info = parse_model_info(run)
-    return model_info['model_name']
 
 
 def read_sequence(file_name):
@@ -396,3 +387,32 @@ def setup_logging(run_number, component_name, module_name=None):
     # Add SLURM job ID to logger's context  
     logger = FormattedLogger(logger, {'job_id': job_id})
     return logger
+
+
+def setup_project_path():
+    """
+    Add the project root to the Python path if not already present.
+    This ensures imports work correctly regardless of where the script is called from.
+    """
+    # Get the directory containing this file (utils/)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # Get the parent directory (project root)
+    project_root = os.path.dirname(current_dir)
+    
+    # Add to path if not already present
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    print(sys.path)
+    return project_root
+
+
+def get_project_root():
+    """
+    Get the project root directory.
+    
+    Returns:
+        str: Path to the project root directory
+    """
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.dirname(current_dir) 

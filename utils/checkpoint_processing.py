@@ -8,9 +8,8 @@ import pandas as pd
 import seaborn as sns
 import torch
 
-sys.path.append(os.path.abspath(os.path.join(__file__, '../')))
 import utils.file_management as fm
-from utils.parse_data import load_trained_model
+from utils.model_utils import load_trained_model
 
 
 def get_checkpoint_files(run, include_final=True, subdir='models', pattern='model_', ext='.pth'):

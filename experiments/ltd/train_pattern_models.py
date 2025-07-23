@@ -4,9 +4,6 @@ import torch.optim as optim
 import sys
 import matplotlib.pyplot as plt
 
-# Add the project root to Python path
-sys.path.append(os.path.abspath(os.path.join(__file__, '../../../')))
-
 from transformer.transformer import GPT, GPTConfig
 from simple_train import SimpleLoader
 
