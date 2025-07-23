@@ -1,12 +1,10 @@
-import os
-import sys
-
 import numpy as np
 import torch
-import torch.nn as nn
 
-from transformer.last_token_gpt import LastTokenGPT
-from transformer.transformer import GPT, GPTConfig
+from interpretability.analyzers.activations import MLPAnalyzer
+from interpretability.core.utils import generate_random_sequences
+from transformer.models import (GPT, GPTConfig, LastTokenGPT,
+                                LastTokenGPTAdapter)
 
 
 def test_model_equivalence():
@@ -14,7 +12,7 @@ def test_model_equivalence():
     
     # Create test configuration
     config = GPTConfig(
-        block_size=8,
+        block_size=6,
         vocab_size=4,
         n_layer=2,
         n_head=2,
@@ -76,6 +74,7 @@ def test_model_equivalence():
         
         return max_diff.item() < 1e-6
 
+
 def test_with_different_sequence_lengths():
     """Test equivalence with different sequence lengths"""
     
@@ -122,6 +121,56 @@ def test_with_different_sequence_lengths():
     
     return all_equivalent
 
+
+def test_activation_differences():
+    """Test activation differences between models."""
+    
+    # Create models
+    config = GPTConfig(
+        block_size=6,
+        vocab_size=4,
+        n_layer=2,
+        n_head=2,
+        n_embd=16,
+        device='cpu'
+    )
+    full_model = GPT(config)
+    
+    # Create reduced model and load weights
+    reduced_model = LastTokenGPT(config)
+    reduced_model.load_from_full_model(full_model)
+    
+    # Test sequences
+    sequences = generate_random_sequences(200, 6, ['R', 'r', 'L', 'l'])
+    print("=== TESTING ACTIVATION DIFFERENCES ===")
+    
+    # Full model analysis
+    full_analyzer = MLPAnalyzer(full_model, config)
+    full_activations = full_analyzer.get_activations(sequences)
+    
+    # Reduced model analysis
+    adapter = LastTokenGPTAdapter(reduced_model)
+    reduced_analyzer = MLPAnalyzer(adapter, config)
+    adapter.patch_analyzer_for_compatibility(reduced_analyzer)
+    reduced_activations = reduced_analyzer.get_activations(sequences)
+    
+    layer_differences = {layer: [] for layer in full_analyzer.layers}
+
+    for seq in sequences:
+        for layer in full_analyzer.layers:
+            full_last = full_activations[seq][layer][-1]
+            reduced_last = reduced_activations[seq][layer][-1]
+            
+            max_diff = np.abs(full_last - reduced_last).max()
+            layer_differences[layer].append(max_diff)
+
+    print("\nLayer Differences:")
+    for layer, diffs in layer_differences.items():
+        print(f"Layer {layer} (max diff): {np.max(diffs):.2e}")
+        print(f"Layer {layer} (mean diff): {np.mean(diffs):.2e}")
+
+
 if __name__ == "__main__":
     test_model_equivalence()
     test_with_different_sequence_lengths()
+    test_activation_differences()
