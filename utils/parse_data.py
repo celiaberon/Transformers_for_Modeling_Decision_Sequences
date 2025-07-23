@@ -8,7 +8,7 @@ import torch
 
 import utils.file_management as fm
 from synthetic_data_generation.agent import RFLR_mouse
-from transformer.transformer import GPTConfig
+from transformer.models import GPTConfig
 
 logger = None
 

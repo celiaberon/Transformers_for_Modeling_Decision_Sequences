@@ -29,6 +29,15 @@ def tokenize(sequences):
                              for sequence in sequences])
 
 
+def generate_random_sequences(num_sequences, length, vocab):
+    """Generate up to the specified number of unique sequences from the given vocabulary."""
+    unique_sequences = set()  # Use a set to store unique sequences
+    while len(unique_sequences) < num_sequences:
+        sequence = ''.join(np.random.choice(vocab, length))
+        unique_sequences.add(sequence)  # Add the sequence to the set (duplicates are ignored)
+    return list(unique_sequences)  # Convert the set back to a list
+
+
 def get_common_sequences(T, run=None, events=None, min_count=50, k=10):
     if events is None:
         events = parse.parse_simulated_data(*parse.get_data_filenames(run, suffix='v'))

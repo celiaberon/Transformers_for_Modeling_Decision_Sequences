@@ -7,152 +7,10 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
-from analyzer import BaseAnalyzer, BaseVisualizer
 
-from interpretability.interp_helpers import embed_sequence
-from transformer.transformer import MLP
-
-
-class ActivationVisualizer(BaseVisualizer):
-    """
-    Visualizer for activation and MLP analysis.
-    Provides plotting utilities for neuron activations, selectivity,
-    and MLP structure.
-    """
-    def plot_activation_bars(
-        self, activations: dict[str, np.ndarray], layer: str
-    ) -> tuple[plt.Figure, np.ndarray]:
-        """
-        Args:
-            activations: Dictionary mapping tokens to activation vectors
-            layer: Layer name for plot title
-
-        Returns:
-            Figure and axes objects
-        """
-        fig, axs = plt.subplots(
-            nrows=2,
-            ncols=2,
-            figsize=(15, 10),
-            sharex=True,
-            sharey=True
-        )
-        for (token, diff), ax in zip(activations.items(), axs.flatten()):
-            bars = ax.bar(range(len(diff)), diff)
-            for bar in bars:
-                if bar.get_height() > 0:
-                    bar.set_color('green')
-                else:
-                    bar.set_color('red')
-            ax.axhline(y=0, color='black', linestyle='--', alpha=0.5)
-            ax.set(
-                title=f'{token} Tokens',
-                xlabel='Neuron Index',
-                ylabel='Activation Difference'
-            )
-        fig.suptitle(f'{layer.capitalize()} Layer', fontsize=14)
-        fig.tight_layout()
-        fig.subplots_adjust(top=0.9)
-        return fig, axs
-
-    def plot_activation_heatmap(
-        self,
-        activations: dict[str, np.ndarray],
-        layer: str,
-        ax: plt.Axes | None = None,
-        **kwargs
-    ) -> plt.Axes:
-        """
-        Args:
-            activations: Dictionary mapping tokens to activation vectors
-            layer: Layer name for plot title
-            ax: Optional axes to plot on
-            **kwargs: Additional plotting arguments
-
-        Returns:
-            Axes object with heatmap
-        """
-        cmap_by_layer = {
-            'input': (-3, 3),
-            'gelu': (-1, 1),
-            'output': (-1, 1)
-        }
-        diff_data = np.vstack(list(activations.values()))
-        ax = sns.heatmap(
-            diff_data,
-            cmap="RdBu_r",
-            center=0,
-            annot=False,
-            fmt=".2f",
-            xticklabels=range(diff_data.shape[1]),
-            yticklabels=activations.keys(),
-            ax=ax,
-            # vmin=cmap_by_layer[layer][0],
-            # vmax=cmap_by_layer[layer][1],
-            **kwargs
-        )
-
-        if self.num_tokens > 1:
-            if self.token_idx == self.num_tokens - 1:
-                ax.set(title='', xlabel='Neuron Index')
-            if self.token_idx == 0:
-                ax.set(
-                    title=f'{layer.capitalize()} Layer',
-                    xticks=[],
-                    xlabel=''
-                )
-            else:
-                ax.set(xlabel='', xticks=[], title='')
-            if self.layer_idx == 0:
-                ax.set(ylabel='Token')
-            else:
-                ax.set(yticks=[], ylabel='')
-        else:
-            ax.set(
-                title=f'{layer.capitalize()} Layer',
-                xlabel='Neuron Index',
-                ylabel='Token'
-            )
-
-        return ax
-
-    def create_mlp_visualization(
-        self,
-        fig_title: str = None
-    ) -> tuple[plt.Figure, dict[str, list[plt.Axes]]]:
-        
-        """Create a matplotlib figure with subfigures for neural network visualization.
-
-        Args:
-            fig_title: Overall figure title
-
-        Returns:
-            Tuple of (figure object, dict mapping layer names to axes lists)
-        """
-        n_layers = len(self.analyzer.layer_composition)
-        figsize = (max(self.analyzer.layer_composition.values()) * 1, n_layers * 1.8)
-        fig = plt.figure(figsize=figsize, constrained_layout=True)
-
-        if fig_title:
-            fig.suptitle(fig_title, fontsize=12)
-
-        subfigs = fig.subfigures(n_layers, 1)  # subfigure for each layer
-    
-        if n_layers == 1:
-            subfigs = [subfigs]
-
-        axes_dict = {}
-        for subfig, (layer_name, n_neurons) in zip(
-            subfigs, self.analyzer.layer_composition.items()
-        ):
-            title = f"{layer_name.capitalize()} Layer ({n_neurons} neurons)"
-            subfig.suptitle(title, fontsize=12)
-            axes = subfig.subplots(nrows=1, ncols=n_neurons)  # ax for each neuron
-            if n_neurons == 1:
-                axes = [axes]
-            axes_dict[layer_name] = axes
-
-        return fig, axes_dict 
+from interpretability.core.base import BaseAnalyzer
+from interpretability.visualizers.activation_viz import ActivationVisualizer
+from transformer.models import MLP
 
 
 class ActivationAnalyzer(BaseAnalyzer):
@@ -163,14 +21,15 @@ class ActivationAnalyzer(BaseAnalyzer):
 
     Attributes:
         model (torch.nn.Module): The transformer model to analyze
-        _hooks (list[torch.utils.hooks.RemovableHandle]): Storage for hooks
     """
 
     def __init__(
         self,
         model: torch.nn.Module,
         model_config: Any,
-        layers: Optional[list[str]] = None
+        # layers: Optional[list[str]] = None,
+        architecture_type: str = 'standard',
+        **kwargs
     ):
         """Initialize the activation analyzer.
 
@@ -178,12 +37,13 @@ class ActivationAnalyzer(BaseAnalyzer):
             model: The transformer model to analyze
             model_config: Model configuration object
             layers: Optional list of layers to analyze
+            architecture_type: Type of architecture ('standard' or 'last_token')
         """
-        super().__init__(model, visualizer_class=ActivationVisualizer)
-        self._hooks: list[torch.utils.hooks.RemovableHandle] = []
+        super().__init__(model, visualizer_class=ActivationVisualizer, **kwargs)
         self.model_component = 'Activation'  # Will be overridden by subclasses
         self.layer_composition = self._get_layer_composition(model_config)
         self.model_config = model_config
+        self.architecture_type = architecture_type
 
     def _get_layer_composition(self, config: Any) -> dict[str, int]:
         """Get the dimensions of each layer in the model component.
@@ -274,7 +134,8 @@ class ActivationAnalyzer(BaseAnalyzer):
         """Find sequences that maximally activate each neuron.
 
         Args:
-            activations: Dictionary mapping sequences to their layer activations
+            activations: Dictionary mapping sequences to their layer
+                         activations
             layer_name: Layer to analyze
             sequences: List of sequences to consider
             top_n: Number of top activating sequences to return
@@ -319,8 +180,8 @@ class ActivationAnalyzer(BaseAnalyzer):
         3. Otherwise use "-"
 
         Args:
-            token_counts_df: DataFrame where rows are sequence positions, columns
-                are tokens, and values are probabilities
+            token_counts_df: DataFrame where rows are sequence positions,
+                columns are tokens, and values are probabilities
             single_threshold: Threshold for using a single token
             joint_threshold: Threshold for using a pair of tokens
 
@@ -400,7 +261,8 @@ class ActivationAnalyzer(BaseAnalyzer):
         verbose: bool = True,
         **kwargs
     ) -> tuple[plt.Axes, pd.DataFrame]:
-        """Analyze patterns in sequences that maximally activate a specific neuron.
+        """Analyze patterns in sequences that maximally activate a specific
+        neuron.
 
         Args:
             max_activations: Dictionary mapping layers and neurons to sequences
@@ -652,7 +514,8 @@ class MLPAnalyzer(ActivationAnalyzer):
         self,
         model: torch.nn.Module,
         config: Any,
-        layers: Optional[list[str]] = None
+        layers: Optional[list[str]] = None,
+        **kwargs
     ):
         """Initialize MLP analyzer.
 
@@ -661,7 +524,7 @@ class MLPAnalyzer(ActivationAnalyzer):
             config: Model configuration object
             layers: Optional list of layers to analyze
         """
-        super().__init__(model, config, layers)
+        super().__init__(model, config, layers, **kwargs)
         self.model_component = 'MLP'
         self.mlp_components = layers or list(self.layer_composition.keys())
         self.layers = [f'{c}_{i}' for c in self.mlp_components for i in range(config.n_layer)]
@@ -688,7 +551,8 @@ class EmbeddingAnalyzer(ActivationAnalyzer):
         self,
         model: torch.nn.Module,
         config: Any,
-        layers: Optional[list[str]] = None
+        layers: Optional[list[str]] = None,
+        **kwargs
     ):
         """Initialize embedding analyzer.
 
@@ -697,7 +561,7 @@ class EmbeddingAnalyzer(ActivationAnalyzer):
             config: Model configuration object
             layers: Optional list of layers to analyze
         """
-        super().__init__(model, config, layers)
+        super().__init__(model, config, layers, **kwargs)
         self.model_component = 'Embedding'
         self.layers = layers or list(self.layer_composition.keys())
 
@@ -727,9 +591,18 @@ class EmbeddingAnalyzer(ActivationAnalyzer):
         if not isinstance(input_seq, (list, np.ndarray)):
             input_seq = [input_seq]
 
-        captured_activations = {seq: {} for seq in input_seq}
-        for seq in input_seq:
-            embed = embed_sequence(self.model, seq, flatten=False)
-            captured_activations[seq]['embed'] = embed#.squeeze(1)
+        # Use unified hook system to capture embeddings
+        raw_activations = self._extract_internal_states(input_seq, ['embed'])
 
-        return captured_activations
+        # Convert raw activations to the expected format
+        # raw_activations: {layer: tensor[batch_size, seq_len, hidden_dim]}
+        # -> {seq: {layer: activation_array}}
+        activations = {
+            seq: {
+                layer_name: acts[i]  # [i] gets i-th sequence
+                for layer_name, acts in raw_activations.items()
+            }
+            for i, seq in enumerate(input_seq)
+        }
+
+        return activations

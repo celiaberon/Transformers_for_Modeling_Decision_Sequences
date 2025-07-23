@@ -2,21 +2,21 @@ import os
 import sys
 from typing import Dict, List, Optional, Tuple
 
-import interp_helpers as interp
+import interpretability.core.utils as interp
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
-from feature_attribution import AttributionAnalyzer
+from interpretability.analyzers.attribution import AttributionAnalyzer
 
 import evaluation.inspect_data as inspect
 import utils.file_management as fm
 import utils.model_utils as model_utils
 import utils.parse_data as parse
-from interpretability.activations import EmbeddingAnalyzer, MLPAnalyzer
-from interpretability.analyzer import DimensionalityReductionConfig
-from interpretability.attention_helpers import AttentionAnalyzer
+from interpretability.analyzers.activations import EmbeddingAnalyzer, MLPAnalyzer
+from interpretability.core.config import DimensionalityReductionConfig
+from interpretability.analyzers.attention import AttentionAnalyzer
 
 # Set seaborn theme
 sns.set_theme(

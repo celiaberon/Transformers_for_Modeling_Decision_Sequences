@@ -1,10 +1,7 @@
-"""Helper functions for analyzing transformer model components."""
+"""Core base classes for interpretability: BaseAnalyzer, BaseVisualizer, HookManager."""
 
-import os
-import sys
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,53 +9,288 @@ import pandas as pd
 import seaborn as sns
 import torch
 import torch.nn.functional as F
-from interp_helpers import embed_sequence, pca_embeddings
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
-from transformer.transformer import GPT
+from interpretability.core.config import (DimensionalityReductionConfig,
+                                          InterpretabilityConfig)
+from interpretability.core.utils import embed_sequence, pca_embeddings
+from transformer.models import GPT
 
 
-@dataclass
-class InterpretabilityConfig:
-    """Base configuration for interpretability analysis."""
+class HookManager:
+    """Manages hooks for capturing model activations.
     
-    def __init__(
-        self,
-        device: str = 'cpu',
-        batch_size: int = 32,
-        max_sequences: int = 1000,
-        random_state: int = 42,
-        verbose: bool = False
-    ):
-        self.device = device
-        self.batch_size = batch_size
-        self.max_sequences = max_sequences
-        self.random_state = random_state
-        self.verbose = verbose
-
-
-class DimensionalityReductionConfig:
-    """Configuration for activation analysis.
-
-    Attributes:
-        token_pos: Position in sequence to analyze
-        sequence_method: Method for sequence embedding
-        n_components: Number of components for dimensionality reduction
-        method: Embedding method ('pca' or 'tsne')
+    This class handles the registration, execution, and cleanup of hooks
+    for capturing activations from different model components.
     """
+    
+    def __init__(self, model: GPT, verbose: bool = False):
+        """Initialize the hook manager.
+        
+        Args:
+            model: The model to attach hooks to
+            verbose: Whether to print debug information
+        """
+        self.model = model
+        self.verbose = verbose
+        self.hooks = []
+        self.activations = {}
+        
+    def setup_hooks(self, components: List[str], last_token_only: bool = False) -> None:
+        """Set up hooks for specified components.
+        Args:
+            components: List of component names to capture
+            last_token_only: If True, only capture activations for the last token
+        """
+        if self.verbose:
+            print(f"Setting up hooks for components: {components}")
+        
+        self.activations.clear()  # Clear all previous activations
+        
+        for component in components:
+            self.activations[component] = []
+            hook = self._register_component_hook(component, last_token_only=last_token_only)
+            self.hooks.append(hook)
+        if self.verbose:
+            print(f"Registered {len(self.hooks)} hooks")
 
-    def __init__(
-        self,
-        token_pos: int = -1,
-        sequence_method: str = 'token',
-        n_components: int = 4,
-        method: str = 'pca'
-    ):
-        self.token_pos = token_pos
-        self.sequence_method = sequence_method
-        self.n_components = n_components
-        self.method = method
+    def _register_component_hook(self, component: str, last_token_only: bool = False) -> torch.utils.hooks.RemovableHandle:
+        """Register a hook for a specific component.
+        Args:
+            component: Component name to hook
+            
+        Returns:
+            Hook handle
+        """
+        if component == 'embed':
+            return self.model.transformer.wte.register_forward_hook(
+                self._make_hook('embed', last_token_only=last_token_only)
+            )
+        elif component == 'final':
+            return self.model.transformer.ln_f.register_forward_hook(
+                self._make_hook('final', last_token_only=last_token_only)
+            )
+        else:
+            layer_idx = int(component.split('_')[-1])
+            if layer_idx >= len(self.model.transformer.h):
+                raise ValueError(f"Layer index {layer_idx} out of range")
+            return self._register_layer_component_hook(component, layer_idx, last_token_only=last_token_only)
+
+    def _register_layer_component_hook(
+            self,
+            component: str,
+            layer_idx: int,
+            last_token_only: bool = False
+        ) -> torch.utils.hooks.RemovableHandle:
+        """Register a hook for a specific layer and component."""
+        
+        layer = self.model.transformer.h[layer_idx]
+        if component.startswith(('layer_', 'attn_')):
+            return layer.register_forward_hook(
+                self._make_hook(component, last_token_only=last_token_only))
+        elif component.startswith(('qk_', 'ov_')):
+            return layer.attn.register_forward_hook(
+                self._make_attention_hook(component, last_token_only=last_token_only))
+        elif component.startswith('input'):
+            return layer.mlp.c_fc.register_forward_hook(
+                self._make_hook(component, last_token_only=last_token_only))
+        elif component.startswith('gelu'):
+            return layer.mlp.gelu.register_forward_hook(
+                self._make_hook(component, last_token_only=last_token_only))
+        elif component.startswith('output'):
+            return layer.mlp.c_proj.register_forward_hook(
+                self._make_hook(component, last_token_only=last_token_only))
+        else:
+            raise ValueError(f"Unknown component: {component}")
+
+    def _make_hook(self, component_name: str, last_token_only: bool = False):
+        def hook(module, input, output):
+            if self.verbose:
+                print(f"Hook fired for {component_name}: output shape {output.shape}")
+            
+            # Guard against unexpected hook firings
+            if component_name not in self.activations:
+                if self.verbose:
+                    print(f"Warning: Hook fired for {component_name}, but no activation list was set up.")
+                return
+            
+            if last_token_only:
+                if output.dim() == 3:
+                    self.activations[component_name].append(
+                        output[:, -1, :].detach().cpu().numpy())
+                else:
+                    self.activations[component_name].append(
+                        output.detach().cpu().numpy())
+            else:
+                self.activations[component_name].append(
+                    output.detach().cpu().numpy())
+            
+            if self.verbose:
+                print(f"Stored activation for {component_name}: {len(self.activations[component_name])} items")
+        return hook
+
+    def _make_attention_hook(self, component_name: str, last_token_only: bool = False):
+        def hook(module, input, output):
+            if self.verbose:
+                print(f"Attention hook fired for {component_name}")
+            
+            # Guard against unexpected hook firings
+            if component_name not in self.activations:
+                if self.verbose:
+                    print(f"Warning: Attention hook fired for {component_name}, but no activation list was set up.")
+                return
+            
+            x = input[0]
+            B, T, C = x.size()
+            qkv = module.c_attn(x)
+            q, k, v = qkv.split(module.n_embd, dim=2)
+            q = q.view(B, T, module.n_head, C // module.n_head).transpose(1, 2)
+            k = k.view(B, T, module.n_head, C // module.n_head).transpose(1, 2)
+            v = v.view(B, T, module.n_head, C // module.n_head).transpose(1, 2)
+            qk_attn = torch.matmul(q, k.transpose(-2, -1)) / (C ** 0.5)
+            qk_attn = qk_attn.masked_fill(
+                module.bias[:, :, :T, :T] == 0, float('-inf')
+            )
+            qk_attn_softmax = F.softmax(qk_attn, dim=-1)
+            
+            ov_output = torch.matmul(qk_attn_softmax, v)
+            if last_token_only:
+                if component_name.startswith('qk_attn_softmax'):
+                    self.activations[component_name].append(
+                        qk_attn_softmax[:, :, -1, :].detach().cpu().numpy())
+                elif component_name.startswith('qk_'):
+                    self.activations[component_name].append(
+                        qk_attn[:, :, -1, :].detach().cpu().numpy())
+                elif component_name.startswith('ov_'):
+                    self.activations[component_name].append(
+                        ov_output[:, :, -1, :].detach().cpu().numpy())
+                else:
+                    self.activations[component_name].append(
+                        output.detach().cpu().numpy())
+            else:
+                if component_name.startswith('qk_attn_softmax'):
+                    self.activations[component_name].append(
+                        qk_attn_softmax.detach().cpu().numpy()
+                    )
+                elif component_name.startswith('qk_'):
+                    self.activations[component_name].append(
+                        qk_attn.detach().cpu().numpy()
+                    )
+                elif component_name.startswith('ov_'):
+                    self.activations[component_name].append(
+                        ov_output.detach().cpu().numpy()
+                    )
+                else:
+                    self.activations[component_name].append(
+                        output.detach().cpu().numpy()
+                    )
+            
+            if self.verbose:
+                print(f"Stored attention activation for {component_name}: {len(self.activations[component_name])} items")
+        return hook
+    
+    def validate_outputs(self, expected_count: int, layer_name: Optional[str] = None, requested_components: Optional[List[str]] = None) -> None:
+        """Validate that hooks captured the expected activations.
+        
+        Args:
+            expected_count: Expected number of activation sets
+            layer_name: Optional specific layer to validate
+            requested_components: Optional list of components that were actually requested
+            
+        Raises:
+            ValueError: If activations were not captured correctly
+        """
+        if self.verbose:
+            print(f"Validating outputs. Expected count: {expected_count}")
+            print(f"Current activations: {self.activations}")
+            if requested_components:
+                print(f"Requested components: {requested_components}")
+        
+        # Only validate components that were actually requested
+        if requested_components:
+            layers_to_check = [layer for layer in requested_components if layer in self.activations]
+        elif layer_name:
+            layers_to_check = [layer_name] if layer_name in self.activations else []
+        else:
+            layers_to_check = list(self.activations.keys())
+        
+        if self.verbose:
+            print(f"Layers to check: {layers_to_check}")
+        
+        for layer in layers_to_check:
+            if self.verbose:
+                print(f"Checking layer {layer}: {len(self.activations[layer])} items")
+            
+            if not self.activations[layer]:
+                raise ValueError(f"No activations captured for layer {layer}")
+            if len(self.activations[layer]) != 1:
+                raise ValueError(
+                    f"Expected 1 forward pass for layer {layer}, "
+                    f"got {len(self.activations[layer])}"
+                )
+            
+            # Validate shapes
+            act = self.activations[layer][0]
+            if self.verbose:
+                print(f"Layer {layer} activation shape: {act.shape}")
+            
+            if layer.startswith(('qk_', 'ov_')):
+                if len(act.shape) != 4:
+                    raise ValueError(
+                        f"Expected 4D attention tensor for {layer}, "
+                        f"got shape {act.shape}"
+                    )
+            else:
+                if len(act.shape) != 3:
+                    raise ValueError(
+                        f"Expected 3D activation tensor for {layer}, "
+                        f"got shape {act.shape}"
+                    )
+            
+            if act.shape[0] != expected_count:
+                raise ValueError(
+                    f"Expected batch size {expected_count} for {layer}, "
+                    f"got {act.shape[0]}"
+                )
+        
+        if self.verbose:
+            print("Validation completed successfully")
+    
+    def get_activations(self) -> Dict[str, np.ndarray]:
+        """Get captured activations.
+        
+        Returns:
+            Dictionary mapping component names to their activations
+        """
+        if self.verbose:
+            print(f"Getting activations. Current state: {self.activations}")
+            for component, acts_list in self.activations.items():
+                print(f"  {component}: {len(acts_list)} items")
+                if acts_list:
+                    print(f"    First item shape: {acts_list[0].shape}")
+        
+        result = {
+            component: acts_list[0] if acts_list else None
+            for component, acts_list in self.activations.items()
+        }
+        
+        if self.verbose:
+            print(f"Returning activations: {result}")
+        
+        return result
+    
+    def clear_activations(self) -> None:
+        """Clear stored activations."""
+        for component in self.activations:
+            self.activations[component].clear()
+    
+    def cleanup(self) -> None:
+        """Remove all registered hooks."""
+        for hook in self.hooks:
+            hook.remove()
+        self.hooks.clear()
+        self.clear_activations()
 
 
 class BaseVisualizer:
@@ -76,6 +308,20 @@ class BaseVisualizer:
         self.plot_context = None  # Can be 'single', 'multi_head', etc.
         self.seq_idx = None
         self.vocab = analyzer.vocab
+        self._set_theme()
+
+    def _set_theme(self):
+        sns.set_theme(style='ticks',
+                      font_scale=1.0,
+                      rc={'axes.labelsize': 10,
+                          'axes.titlesize': 10,
+                          'savefig.transparent': True,
+                          'legend.title_fontsize': 10,
+                          'legend.fontsize': 10,
+                          'legend.borderpad': 0.2,
+                          'figure.titlesize': 10,
+                          'figure.subplot.wspace': 0.1,
+                          })
         
     def plot_token_probs(
         self,
@@ -717,7 +963,7 @@ class BaseAnalyzer(ABC):
         self,
         model: GPT,
         verbose: bool = False,
-        visualizer_class = BaseVisualizer,
+        visualizer_class=BaseVisualizer,
         config: Optional[InterpretabilityConfig] = None
     ):
         """Initialize the analyzer with a model."""
@@ -732,7 +978,7 @@ class BaseAnalyzer(ABC):
         self.n_embd = model.config.n_embd
         self.visualizer = visualizer_class(self)
         self.config = config or InterpretabilityConfig()
-        self._hooks = []
+        self.hook_manager = HookManager(model, verbose)
 
     def tokenize(
         self,
@@ -752,10 +998,15 @@ class BaseAnalyzer(ABC):
         if isinstance(sequences, str):
             token_ids = [self.stoi[char] for char in sequences]
             if batch:
-                return torch.tensor(token_ids, dtype=torch.long, device=self.device).unsqueeze(0)
+                return torch.tensor(
+                    token_ids, dtype=torch.long, device=self.device
+                ).unsqueeze(0)
             return torch.tensor(token_ids, dtype=torch.long, device=self.device)
         else:
-            token_ids = [[self.stoi[char] for char in sequence] for sequence in sequences]
+            token_ids = [
+                [self.stoi[char] for char in sequence]
+                for sequence in sequences
+            ]
             return torch.tensor(token_ids, dtype=torch.long, device=self.device)
 
     def _prepare_input(
@@ -814,7 +1065,9 @@ class BaseAnalyzer(ABC):
         probs = self.predict_next_token_probs(sequence)
         return dict(zip(self.vocab, probs))
 
-    def logits_to_probabilities(self, logits: torch.Tensor, dim: int = -1) -> torch.Tensor:
+    def logits_to_probabilities(
+        self, logits: torch.Tensor, dim: int = -1
+    ) -> torch.Tensor:
         """Convert logits to probabilities using softmax.
         
         Args:
@@ -826,8 +1079,11 @@ class BaseAnalyzer(ABC):
         """
         return F.softmax(logits, dim=dim)
     
-    def extract_target_logits(self, logits_by_layer: Dict[str, torch.Tensor], 
-                            target_position: int = -1) -> Dict[str, torch.Tensor]:
+    def extract_target_logits(
+        self, 
+        logits_by_layer: Dict[str, torch.Tensor], 
+        target_position: int = -1
+    ) -> Dict[str, torch.Tensor]:
         """Extract logits for a specific target position from layer logits.
         
         Args:
@@ -842,7 +1098,9 @@ class BaseAnalyzer(ABC):
             for layer_name, logits in logits_by_layer.items()
         }
 
-    def get_sequence_targets(self, sequences: list[str], target_position: int = -1) -> list[int]:
+    def get_sequence_targets(
+        self, sequences: list[str], target_position: int = -1
+    ) -> list[int]:
         """Create target labels from sequences.
         
         Args:
@@ -858,7 +1116,9 @@ class BaseAnalyzer(ABC):
                 target_token = seq[target_position]
                 targets.append(self.stoi[target_token])
             else:
-                raise ValueError(f"Sequence {seq} is too short to have a token at position {target_position}")
+                raise ValueError(
+                    f"Sequence {seq} is too short to have a token at position {target_position}"
+                )
         return targets
 
     def count_tokens(self, seqs: list[str]) -> pd.DataFrame:
@@ -870,7 +1130,6 @@ class BaseAnalyzer(ABC):
         Returns:
             DataFrame with token counts at each position
         """
-
         token_counts = []
         for pos in range(len(seqs[0])):  # Assuming all sequences have same length
             pos_counts = {'R': 0, 'r': 0, 'L': 0, 'l': 0}
@@ -951,7 +1210,9 @@ class BaseAnalyzer(ABC):
                 for act in activations.values()
             ])
         elif config.sequence_method == 'concat':
-            X = np.concatenate([act.reshape(1, -1) for act in activations.values()], axis=0)
+            X = np.concatenate([
+                act.reshape(1, -1) for act in activations.values()
+            ], axis=0)
 
         if config.method == 'tsne':
             model = TSNE(n_components=2)
@@ -967,183 +1228,6 @@ class BaseAnalyzer(ABC):
 
         return model, X_embedding, seq_to_embedding
 
-    def _validate_hook_outputs(
-        self,
-        raw_activations: dict[str, list[np.ndarray]],
-        expected_count: int,
-        layer_name: str | None = None
-    ) -> None:
-        """Validate that hooks captured the expected number of activations.
-
-        Args:
-            raw_activations: Dictionary of captured activations
-            expected_count: Expected number of activation sets
-            layer_name: Optional specific layer to validate
-            
-        Raises:
-            ValueError: If activations were not captured correctly
-        """
-        layers_to_check = [layer_name] if layer_name else list(raw_activations.keys())
-        # layers_to_check = [layer_name] if layer_name else self.layers
-        for layer in layers_to_check:
-            if not raw_activations[layer]:
-                raise ValueError(f"No activations captured for layer {layer}")
-            if len(raw_activations[layer]) != 1:  # Should only have one forward pass
-                raise ValueError(
-                    f"Expected 1 forward pass for layer {layer}, "
-                    f"got {len(raw_activations[layer])}"
-                )
-            
-            # Validate shapes based on component type
-            act = raw_activations[layer][0]
-            
-            # Attention components (qk_, ov_) are 4D: [batch, n_heads, seq_len, seq_len/head_dim]
-            if layer.startswith(('qk_', 'ov_')):
-                if len(act.shape) != 4:
-                    raise ValueError(
-                        f"Expected 4D attention tensor for {layer}, "
-                        f"got shape {act.shape}"
-                    )
-            else:
-                # Other components (MLP, layers, etc.) are 3D: [batch, seq_len, hidden_dim]
-                if len(act.shape) != 3:
-                    raise ValueError(
-                        f"Expected 3D activation tensor for {layer}, "
-                        f"got shape {act.shape}"
-                    )
-            
-            # Validate batch size for all components
-            if act.shape[0] != expected_count:
-                raise ValueError(
-                    f"Expected batch size {expected_count} for {layer}, "
-                    f"got {act.shape[0]}"
-                )
-
-    def _setup_hooks_for_components(
-        self, 
-        components: List[str] = None
-    ) -> Tuple[Dict[str, List[torch.Tensor]], List[torch.utils.hooks.RemovableHandle]]:
-        """Set up hooks to capture activations from any model components.
-        
-        Args:
-            components: List of component names to capture. Can include:
-                - 'layer_0', 'layer_1', etc. for transformer block outputs
-                - 'input', 'gelu', 'output' for MLP components within blocks
-                - 'final' for final layer norm output
-                - 'embed' for token embeddings
-                - 'attn_0', 'attn_1', etc. for attention output
-                - 'qk_0', 'qk_1', etc. for QK attention weights
-                - 'ov_0', 'ov_1', etc. for OV attention (weighted values)
-                
-        Returns:
-            Tuple of (activations dict, hooks list)
-        """
-        activations = {}
-        hooks = []
-        
-        if components is None:
-            components = self.layers
-
-        if self.verbose:
-            print(f"Setting up hooks for components: {components}")
-        
-        def make_hook(component_name: str):
-            def hook(module, input, output):
-                # For MLP input components, capture the input
-                if component_name.startswith('input'):
-                    activations[component_name].append(input[0].detach().cpu().numpy())
-                else:
-                    # For all other components, capture the output
-                    activations[component_name].append(output.detach().cpu().numpy())
-            return hook
-        
-        def make_attention_hook(component_name: str):
-            """Special hook for capturing QK and OV attention separately."""
-            def hook(module, input, output):
-                # Get the input to the attention module
-                x = input[0]  # Shape: [batch, seq_len, n_embd]
-                B, T, C = x.size()
-
-                # Compute Q, K, V
-                qkv = module.c_attn(x)  # Shape: [batch, seq_len, 3*n_embd]
-                q, k, v = qkv.split(module.n_embd, dim=2)  # Each: [batch, seq_len, n_embd]
-                
-                # Reshape for multi-head attention
-                q = q.view(B, T, module.n_head, C // module.n_head).transpose(1, 2)
-                k = k.view(B, T, module.n_head, C // module.n_head).transpose(1, 2)
-                v = v.view(B, T, module.n_head, C // module.n_head).transpose(1, 2)
-                
-                # Compute QK attention weights
-                qk_attn = torch.matmul(q, k.transpose(-2, -1)) / (C ** 0.5)
-                qk_attn = qk_attn.masked_fill(module.bias[:, :, :T, :T] == 0, float('-inf'))
-                qk_attn_softmax = F.softmax(qk_attn, dim=-1)
-                
-                # Compute OV attention (weighted values)
-                ov_output = torch.matmul(qk_attn_softmax, v)
-                
-                # Store based on component type
-                if component_name.startswith('qk_attn_softmax'):
-                    activations[component_name].append(qk_attn_softmax.detach().cpu().numpy())
-                elif component_name.startswith('qk_'):
-                    activations[component_name].append(qk_attn.detach().cpu().numpy())
-                elif component_name.startswith('ov_'):
-                    activations[component_name].append(ov_output.detach().cpu().numpy())
-                else:
-                    # Regular attention output
-                    activations[component_name].append(output.detach().cpu().numpy())
-            return hook
-
-        # Register hooks based on component type
-        for component in components:
-            activations[component] = []
-            if component == 'embed':
-                # Hook on token embeddings
-                hook = self.model.transformer.wte.register_forward_hook(
-                    make_hook('embed')
-                )
-                hooks.append(hook)
-                
-            elif component == 'final':
-                # Hook on final layer norm
-                hook = self.model.transformer.ln_f.register_forward_hook(
-                    make_hook('final')
-                )
-                hooks.append(hook)
-            
-            else:
-                layer_idx = int(component.split('_')[-1])
-                if layer_idx > len(self.model.transformer.h):
-                    raise ValueError(f"Layer index {layer_idx} is out of range for {component}")
-                
-                if component.startswith(('layer_', 'attn_')):
-                    hook = self.model.transformer.h[layer_idx].register_forward_hook(
-                        make_hook(component)
-                    )
-                elif component.startswith(('qk_', 'ov_')):
-                    hook = self.model.transformer.h[layer_idx].attn.register_forward_hook(
-                        make_attention_hook(component)
-                    )
-                elif component.startswith('input'):
-                    hook = self.model.transformer.h[layer_idx].mlp.c_fc.register_forward_hook(
-                        make_hook(component)
-                    )
-                elif component.startswith('gelu'):
-                    hook = self.model.transformer.h[layer_idx].mlp.gelu.register_forward_hook(
-                        make_hook(component)
-                    )
-                elif component.startswith('output'):
-                    hook = self.model.transformer.h[layer_idx].mlp.c_proj.register_forward_hook(
-                        make_hook(component)
-                    )
-                else:
-                    raise ValueError(f"Unknown component: {component}")
-                hooks.append(hook)
-        
-        if self.verbose:
-            print(f"Registered {len(hooks)} hooks")
-            
-        return activations, hooks
-
     def _extract_internal_states(
         self,
         sequences: List[str],
@@ -1158,44 +1242,44 @@ class BaseAnalyzer(ABC):
         Returns:
             Dictionary mapping component names to their states as {layer: tensor[batch_size, seq_len, hidden_dim]}
         """
+        if self.verbose:
+            print(f"Extracting internal states for {len(sequences)} sequences")
+            print(f"Components: {components}")
+        
         # Tokenize sequences
         tokens = self._prepare_input(sequences, batch=True)
+        
+        if self.verbose:
+            print(f"Input tokens shape: {tokens.shape}")
         
         # Store original training state
         was_training = self.model.training
         
         # Set up hooks
-        raw_activations, hooks = self._setup_hooks_for_components(components)
+        self.hook_manager.setup_hooks(components)
         
         try:
             # Set to eval mode and disable gradients
             self.model.eval()
             with torch.no_grad():
+                if self.verbose:
+                    print("Running model forward pass...")
                 self.model(tokens)
+                if self.verbose:
+                    print("Forward pass completed")
                 # Validate hook outputs
-                self._validate_hook_outputs(raw_activations, len(sequences))
+                self.hook_manager.validate_outputs(len(sequences), requested_components=components)
         finally:
             # Restore original training state
             if was_training:
                 self.model.train()
-            
-            # Clean up hooks
-            for hook in hooks:
-                hook.remove()
         
-        # Process captured activations
-        activations = {}
-        for component, acts_list in raw_activations.items():
-            if acts_list:
-                # Take the first (and should be only) activation
-                activations[component] = acts_list[0]
+        # Get activations before cleanup
+        activations = self.hook_manager.get_activations()
+        if self.verbose:
+            print(f"Retrieved activations: {list(activations.keys())}")
+        
+        # Cleanup after getting activations
+        self.hook_manager.cleanup()
         
         return activations
-
-    def cleanup_hooks(self):
-        """Clean up any registered hooks."""
-        for hook in self._hooks:
-            hook.remove()
-        self._hooks.clear()
-
-    

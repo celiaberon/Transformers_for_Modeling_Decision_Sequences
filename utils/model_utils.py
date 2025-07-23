@@ -6,7 +6,7 @@ import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 import utils.file_management as fm
-from transformer.transformer import GPTConfig
+from transformer.models import GPT, GPT_noLN, GPTConfig, LastTokenGPT
 
 
 def select_model(model_type):
@@ -23,17 +23,15 @@ def select_model(model_type):
         ValueError: If model_type is not recognized
     """
     if model_type == 'GPT':
-        from transformer import GPT
         return GPT
     elif model_type == 'GPT_noLN':
-        from transformer import GPT_noLN
         return GPT_noLN
     elif model_type == 'LastTokenGPT':
-        from transformer import LastTokenGPT
         return LastTokenGPT
     else:
         raise ValueError(f"Invalid model type: {model_type}. "
-                        f"Supported types: {get_available_model_types()}")
+                         f"Supported types: {get_available_model_types()}")
+
 
 def get_available_model_types():
     """
@@ -58,6 +56,7 @@ def create_model_from_config(model_type, config):
     """
     ModelClass = select_model(model_type)
     return ModelClass(config)
+
 
 def parse_model_info(run=None, model_name=None):
     """
@@ -126,6 +125,7 @@ def get_latest_model_name(run=None):
     model_info = parse_model_info(run)
     return model_info['model_name']
 
+
 def load_trained_model(run, model_name, device, **kwargs):
     """
     Load a trained model from disk with proper model type selection.
@@ -171,7 +171,16 @@ def load_trained_model(run, model_name, device, **kwargs):
 
     return model, model_info, config
 
-def save_model(model, model_name, run_number, *, is_checkpoint=False, step=None, compile=False, logger=None, **kwargs):
+
+def save_model(model,
+               model_name,
+               run_number,
+               *,
+               is_checkpoint=False,
+               step=None,
+               compile=False,
+               logger=None,
+               **kwargs):
     """
     Save model weights or checkpoint.
     
@@ -211,4 +220,4 @@ def save_model(model, model_name, run_number, *, is_checkpoint=False, step=None,
         }
         torch.save(checkpoint, model_path)
     else:
-        torch.save(state_dict, model_path) 
+        torch.save(state_dict, model_path)

@@ -5,7 +5,7 @@ import numpy as np
 from torch.distributed import init_process_group, destroy_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from transformer import GPT, DataLoader, DDPConfig, GPTConfig
+from transformer.models import GPT, DataLoader, DDPConfig, GPTConfig
 
 def parse_args():
     parser = argparse.ArgumentParser()
