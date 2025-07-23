@@ -288,10 +288,12 @@ class LastTokenGPTAdapter:
             print(f"Final layer would be: _{self.config.n_layer-1}")
             print(f"Is final layer? {layer_name.endswith(f'_{self.config.n_layer-1}')}")
         
-        # For LastTokenGPT final layer components, expand 2D to 3D
+        # For LastTokenGPT final layer MLP components, expand 2D to 3D
+        # Skip attention components as they already have correct shapes
         if (self.is_last_token_gpt and 
-                layer_name.endswith(f'_{self.config.n_layer-1}')):
-            # This is the final layer - activations might be 2D (B, hidden_dim)
+                layer_name.endswith(f'_{self.config.n_layer-1}') and
+                not any(attn_comp in layer_name for attn_comp in ['qk', 'attn'])):
+            # This is the final layer MLP - activations might be 2D (B, hidden_dim)
             if len(activation.shape) == 2:
                 if self.verbose:
                     print(f"Converting final layer {layer_name} from 2D {activation.shape} to 3D")
@@ -317,8 +319,6 @@ class LastTokenGPTAdapter:
         Returns:
             Modified hook manager with shape normalization
         """
-        # Store original method
-        original_make_hook = base_hook_manager._make_hook
         
         def custom_make_hook(component_name: str, last_token_only: bool = False):
             def hook(module, input, output):
@@ -392,8 +392,9 @@ class LastTokenGPTAdapter:
             # Get input shape info
             B, T = len(sequences), len(sequences[0]) if sequences else (0, 0)
             
-            # Store original hook creation method
+            # Store original hook creation methods
             original_make_hook = analyzer.hook_manager._make_hook
+            original_make_attention_hook = analyzer.hook_manager._make_attention_hook
             
             def shape_normalizing_make_hook(component_name: str, last_token_only: bool = False):
                 def hook(module, input, output):
@@ -427,15 +428,110 @@ class LastTokenGPTAdapter:
                         print(f"Stored normalized activation for {component_name}")
                 return hook
             
-            # Temporarily patch the hook manager
+            def last_token_attention_hook(component_name: str, last_token_only: bool = False):
+                """Custom attention hook for LastTokenGPT that only computes last token attention."""
+                def hook(module, input, output):
+                    if analyzer.hook_manager.verbose:
+                        print(f"LastToken attention hook fired for {component_name}")
+                    
+                    # Guard against unexpected hook firings
+                    if component_name not in analyzer.hook_manager.activations:
+                        if analyzer.hook_manager.verbose:
+                            print(f"Warning: Attention hook fired for {component_name}")
+                        return
+                    
+                    x = input[0]
+                    B, T, C = x.size()
+                    
+                    # Check if this is the final layer
+                    layer_idx = int(component_name.split('_')[-1])
+                    is_final_layer = (layer_idx == self.config.n_layer - 1)
+                    
+                    if is_final_layer:
+                        # Use LastTokenAttentionFinal logic
+                        qkv = module.c_attn(x)
+                        q, k, v = qkv.split(module.n_embd, dim=2)
+                        
+                        # Only need query for last token
+                        q_last = q[:, -1:, :]  # Shape: (B, 1, n_embd)
+                        
+                        # Need full k, v since last token can attend to all positions
+                        k = k.view(B, T, module.n_head, C // module.n_head).transpose(1, 2)
+                        v = v.view(B, T, module.n_head, C // module.n_head).transpose(1, 2)
+                        q_last = q_last.view(B, 1, module.n_head, C // module.n_head)
+                        q_last = q_last.transpose(1, 2)
+                        
+                        # Compute attention only for last token
+                        qk_attn = torch.matmul(q_last, k.transpose(-2, -1)) / (C ** 0.5)
+                        mask = module.bias[:, :, -1:, :T] == 0
+                        qk_attn = qk_attn.masked_fill(mask, float('-inf'))
+                        qk_attn_softmax = torch.softmax(qk_attn, dim=-1)
+                        
+                        # Create full-size attention matrix with zeros except last row
+                        full_qk_attn = torch.zeros(B, module.n_head, T, T, device=x.device, dtype=x.dtype)
+                        full_qk_attn[:, :, -1:, :] = qk_attn
+                        
+                        full_qk_attn_softmax = torch.zeros(B, module.n_head, T, T, device=x.device, dtype=x.dtype)
+                        full_qk_attn_softmax[:, :, -1:, :] = qk_attn_softmax
+                        
+                        # Compute OV output (only last token has meaningful values)
+                        ov_output_last = torch.matmul(qk_attn_softmax, v)
+                        full_ov_output = torch.zeros(B, module.n_head, T, C // module.n_head, device=x.device, dtype=x.dtype)
+                        full_ov_output[:, :, -1:, :] = ov_output_last
+                        
+                    else:
+                        # Use regular attention computation for non-final layers
+                        qkv = module.c_attn(x)
+                        q, k, v = qkv.split(module.n_embd, dim=2)
+                        q = q.view(B, T, module.n_head, C // module.n_head).transpose(1, 2)
+                        k = k.view(B, T, module.n_head, C // module.n_head).transpose(1, 2)
+                        v = v.view(B, T, module.n_head, C // module.n_head).transpose(1, 2)
+                        
+                        full_qk_attn = torch.matmul(q, k.transpose(-2, -1)) / (C ** 0.5)
+                        full_qk_attn = full_qk_attn.masked_fill(
+                            module.bias[:, :, :T, :T] == 0, float('-inf')
+                        )
+                        full_qk_attn_softmax = torch.softmax(full_qk_attn, dim=-1)
+                        full_ov_output = torch.matmul(full_qk_attn_softmax, v)
+                    
+                    # Store the appropriate activation based on component type
+                    if last_token_only:
+                        if component_name.startswith('qk_attn_softmax'):
+                            activation = full_qk_attn_softmax[:, :, -1, :].detach().cpu().numpy()
+                        elif component_name.startswith('qk_'):
+                            activation = full_qk_attn[:, :, -1, :].detach().cpu().numpy()
+                        elif component_name.startswith('ov_'):
+                            activation = full_ov_output[:, :, -1, :].detach().cpu().numpy()
+                        else:
+                            activation = output.detach().cpu().numpy()
+                    else:
+                        if component_name.startswith('qk_attn_softmax'):
+                            activation = full_qk_attn_softmax.detach().cpu().numpy()
+                        elif component_name.startswith('qk_'):
+                            activation = full_qk_attn.detach().cpu().numpy()
+                        elif component_name.startswith('ov_'):
+                            activation = full_ov_output.detach().cpu().numpy()
+                        else:
+                            activation = output.detach().cpu().numpy()
+                    
+                    analyzer.hook_manager.activations[component_name].append(activation)
+                    
+                    if analyzer.hook_manager.verbose:
+                        print(f"Stored LastToken attention activation for {component_name}: shape {activation.shape}")
+                
+                return hook
+            
+            # Temporarily patch both hook managers
             analyzer.hook_manager._make_hook = shape_normalizing_make_hook
+            analyzer.hook_manager._make_attention_hook = last_token_attention_hook
             
             try:
                 # Call the original method with patched hooks
                 return original_extract(sequences, components)
             finally:
-                # Restore original hook creation method
+                # Restore original hook creation methods
                 analyzer.hook_manager._make_hook = original_make_hook
+                analyzer.hook_manager._make_attention_hook = original_make_attention_hook
         
         # Replace the analyzer's method
         analyzer._extract_internal_states = patched_extract_internal_states

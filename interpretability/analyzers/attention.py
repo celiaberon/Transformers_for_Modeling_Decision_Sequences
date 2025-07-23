@@ -55,10 +55,10 @@ class AttentionAnalyzer(BaseAnalyzer):
                     print(f"Found attention map for layer {i}: shape {activations[key].shape}")
             else:
                 print(f'No attention map found for layer {i}')
-        
+
         if self.verbose:
             print(f"Returning {len(attention_maps)} attention maps")
-        
+
         return attention_maps
 
     def get_activations(self, sequences: list[str], layer: str) -> np.ndarray:
@@ -86,7 +86,7 @@ class AttentionAnalyzer(BaseAnalyzer):
                 )
             diff_maps.append(layer_diff)
         return diff_maps
-
+    
     def attention_factorization(
         self,
         sequence: str,
