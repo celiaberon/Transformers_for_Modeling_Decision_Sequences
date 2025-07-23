@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -49,19 +50,19 @@ class LastTokenAttentionFinal(nn.Module):
         return y.squeeze(1)  # (B, C)
 
 
-class LastTokenMLP(MLP):
-    """Multi-layer perceptron for transformer block operating only on the last token"""
-    def __init__(self, config):
-        super().__init__(config)
+# class LastTokenMLP(MLP):
+#     """Multi-layer perceptron for transformer block operating only on the last token"""
+#     def __init__(self, config):
+#         super().__init__(config)
 
-    def forward(self, x, is_final_layer=False):
-        if is_final_layer:
-            # Only process last token in final layer - return smaller tensor
-            x_last = x[:, -1, :]  # Shape: (B, n_embd)
-            return super().forward(x_last)  # Shape: (B, n_embd)
-        else:
-            # Process all tokens in non-final layers
-            return super().forward(x)  # Shape: (B, T, n_embd)
+#     def forward(self, x, is_final_layer=False):
+#         if is_final_layer:
+#             # Only process last token in final layer - return smaller tensor
+#             x_last = x[:, -1, :]  # Shape: (B, n_embd)
+#             return super().forward(x_last)  # Shape: (B, n_embd)
+#         else:
+#             # Process all tokens in non-final layers
+#             return super().forward(x)  # Shape: (B, T, n_embd)
 
 
 class RegularBlock(nn.Module):
@@ -84,15 +85,19 @@ class FinalBlock(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.ln_1 = nn.LayerNorm(config.n_embd)
-        self.attn_final = LastTokenAttentionFinal(config)
+        self.attn = LastTokenAttentionFinal(config)
         self.ln_2 = nn.LayerNorm(config.n_embd)
-        self.mlp = LastTokenMLP(config)
+        self.mlp = MLP(config)
+        self.is_last_token_gpt = True
 
     def forward(self, x):
-        # Optimized attention that only computes last token
+        # Apply attention to get the last token representation
         x_last = x[:, -1, :]  # Shape: (B, n_embd)
-        x_last = x_last + self.attn_final(self.ln_1(x))
-        x_last = x_last + self.mlp(self.ln_2(x), is_final_layer=True)
+        x_last = x_last + self.attn(self.ln_1(x))
+        
+        # Apply LayerNorm to the current last token state, not full sequence
+        x_last_normed = self.ln_2(x_last.unsqueeze(1)).squeeze(1)
+        x_last = x_last + self.mlp(x_last_normed)
         return x_last  # Shape: (B, n_embd)
 
 
@@ -137,6 +142,10 @@ class LastTokenGPT(GPT):
         self.lm_head.weight = self.transformer.wte.weight  # Weight tying
         self.apply(self._init_weights)
         self.device = config.device
+        self.is_last_token_gpt = (
+            hasattr(self.transformer.h[-1], 'is_last_token_gpt') and 
+            self.transformer.h[-1].is_last_token_gpt
+        )
 
     def load_from_full_model(self, full_model):
         """
@@ -148,51 +157,36 @@ class LastTokenGPT(GPT):
         full_state = full_model.state_dict()
         reduced_state = self.state_dict()
         
-        def copy_if_exists(src_key, dst_key):
-            """Helper to copy weights if both source and destination exist"""
-            if src_key in full_state and dst_key in reduced_state:
-                reduced_state[dst_key].copy_(full_state[src_key])
-        
-        # Copy embeddings and final layers
+        # Copy embeddings and final layers (these are identical)
         shared_keys = [
             'transformer.wte.weight', 'transformer.wpe.weight', 
             'transformer.ln_f.weight', 'transformer.ln_f.bias',
             'lm_head.weight'
         ]
         for key in shared_keys:
-            copy_if_exists(key, key)
+            if key in full_state and key in reduced_state:
+                reduced_state[key].copy_(full_state[key])
         
         # Copy transformer blocks
         for layer_idx in range(len(full_model.transformer.h)):
-            full_prefix = f'transformer.h.{layer_idx}'
-            reduced_prefix = f'transformer.h.{layer_idx}'
+            prefix = f'transformer.h.{layer_idx}'
             
-            # Define all weight types for each component
-            layer_norm_weights = ['ln_1.weight', 'ln_1.bias', 
-                                  'ln_2.weight', 'ln_2.bias']
-            attention_weights = ['c_attn.weight', 'c_attn.bias', 
-                                 'c_proj.weight', 'c_proj.bias']
-            mlp_weights = ['c_fc.weight', 'c_fc.bias', 
-                           'c_proj.weight', 'c_proj.bias']
+            # All weight types for each component
+            component_weights = {
+                'ln_1': ['weight', 'bias'],
+                'ln_2': ['weight', 'bias'], 
+                'attn.c_attn': ['weight', 'bias'],
+                'attn.c_proj': ['weight', 'bias'],
+                'mlp.c_fc': ['weight', 'bias'],
+                'mlp.c_proj': ['weight', 'bias']
+            }
             
-            # Copy layer norms
-            for weight_name in layer_norm_weights:
-                copy_if_exists(f'{full_prefix}.{weight_name}', 
-                             f'{reduced_prefix}.{weight_name}')
-            
-            # Copy attention weights to appropriate attention module
-            is_final_layer = (layer_idx == len(full_model.transformer.h) - 1)
-            attn_module = 'attn_final' if is_final_layer else 'attn'
-            
-            for weight_name in attention_weights:
-                full_key = f'{full_prefix}.attn.{weight_name}'
-                reduced_key = f'{reduced_prefix}.{attn_module}.{weight_name}'
-                copy_if_exists(full_key, reduced_key)
-            
-            # Copy MLP weights
-            for weight_name in mlp_weights:
-                copy_if_exists(f'{full_prefix}.mlp.{weight_name}', 
-                             f'{reduced_prefix}.mlp.{weight_name}')
+            # Copy all weights - same paths for both models now
+            for component, weights in component_weights.items():
+                for weight in weights:
+                    key = f'{prefix}.{component}.{weight}'
+                    if key in full_state and key in reduced_state:
+                        reduced_state[key].copy_(full_state[key])
         
         self.load_state_dict(reduced_state)
 
@@ -232,78 +226,217 @@ class LastTokenGPT(GPT):
         return logits, loss
 
 
-class LastTokenGPTAdapter(nn.Module):
+class LastTokenGPTAdapter:
     """
-    Adapter that makes LastTokenGPT or standard GPT compatible with analyzers,
-    and provides last-token-specific accessors for attention and MLP activations.
+    Adapter that makes LastTokenGPT compatible with analysis tools.
+    
+    This adapter wraps a LastTokenGPT model and provides the same interface
+    as a regular GPT model, but handles the shape differences internally.
+    
+    IMPORTANT: For LastTokenGPT's final layer activations:
+    - Only the last token position contains actual computed values
+    - All previous token positions (0 to T-2) are set to ZERO
+    - This represents what LastTokenGPT actually computes
+    - Analysis tools should interpret zeros as "not computed" for those positions
     """
-    def __init__(self, model):
-        super().__init__()
+    def __init__(self, model, verbose: bool = False):
         self.model = model
         self.config = model.config
-        self.layer_mapping = self._create_layer_mapping()
-        self._last_token_attention_cache = None
-        self._last_token_mlp_cache = None
-        self._is_last_token_gpt = hasattr(model, 'transformer') and hasattr(model.transformer.h[-1], 'attn_final')
+        self.device = next(model.parameters()).device
+        self.verbose = verbose
+        self.is_last_token_gpt = getattr(model, 'is_last_token_gpt', False)
+        
+        # Store reference to the model's methods for delegation
+        self._original_forward = model.forward
+        
+    def forward(self, *args, **kwargs):
+        """Forward pass through the underlying model."""
+        return self.model(*args, **kwargs)
+    
+    def __call__(self, *args, **kwargs):
+        """Make the adapter callable like a PyTorch model."""
+        return self.model(*args, **kwargs)
+    
+    def __getattr__(self, name):
+        """Delegate attribute access to the underlying model."""
+        # Don't delegate these special attributes
+        if name in ['model', 'config', 'device', 'verbose', 'is_last_token_gpt']:
+            return super().__getattribute__(name)
+        return getattr(self.model, name)
+        
+    def normalize_activation_shape(self, activation, layer_name, original_input_shape):
+        """
+        Normalize activation shapes to be compatible with analysis tools.
+        
+        Args:
+            activation: The captured activation tensor (numpy array)
+            layer_name: Name of the layer that produced this activation
+            original_input_shape: Shape of the original input (B, T)
+            
+        Returns:
+            Normalized activation with shape (B, T, hidden_dim)
+            For LastTokenGPT final layers: positions 0 to T-2 are zeros, 
+            position T-1 contains the actual computed activation
+        """
+        if activation is None:
+            return activation
+            
+        B, T = original_input_shape
+        
+        if self.verbose:
+            print(f"Normalizing {layer_name}: shape {activation.shape}, n_layer={self.config.n_layer}")
+            print(f"Final layer would be: _{self.config.n_layer-1}")
+            print(f"Is final layer? {layer_name.endswith(f'_{self.config.n_layer-1}')}")
+        
+        # For LastTokenGPT final layer components, expand 2D to 3D
+        if (self.is_last_token_gpt and 
+                layer_name.endswith(f'_{self.config.n_layer-1}')):
+            # This is the final layer - activations might be 2D (B, hidden_dim)
+            if len(activation.shape) == 2:
+                if self.verbose:
+                    print(f"Converting final layer {layer_name} from 2D {activation.shape} to 3D")
+                # Create 3D tensor with zeros for positions 0 to T-2
+                # and actual activation at position T-1 (last token)
+                B_act, hidden_dim = activation.shape
+                expanded = np.zeros((B_act, T, hidden_dim), dtype=activation.dtype)
+                # Put the actual computed activation at the last position
+                expanded[:, -1, :] = activation
+                activation = expanded
+                if self.verbose:
+                    print(f"Final shape after expansion: {activation.shape}")
+        
+        return activation
 
-    def _create_layer_mapping(self):
-        mapping = {}
-        for i in range(self.config.n_layer):
-            if hasattr(self.model.transformer.h[i], 'attn_final'):
-                mapping[f'attn_{i}'] = self.model.transformer.h[i].attn_final
-            else:
-                mapping[f'attn_{i}'] = self.model.transformer.h[i].attn
-            mapping[f'mlp_{i}'] = self.model.transformer.h[i].mlp
-        mapping['wte'] = self.model.transformer.wte
-        mapping['wpe'] = self.model.transformer.wpe
-        mapping['ln_f'] = self.model.transformer.ln_f
-        return mapping
+    def create_shape_normalizing_hook_manager(self, base_hook_manager):
+        """
+        Create a hook manager that normalizes shapes for LastTokenGPT compatibility.
+        
+        Args:
+            base_hook_manager: The original HookManager instance
+            
+        Returns:
+            Modified hook manager with shape normalization
+        """
+        # Store original method
+        original_make_hook = base_hook_manager._make_hook
+        
+        def custom_make_hook(component_name: str, last_token_only: bool = False):
+            def hook(module, input, output):
+                if base_hook_manager.verbose:
+                    print(f"Hook fired for {component_name}: output shape {output.shape}")
+                
+                # Guard against unexpected hook firings
+                if component_name not in base_hook_manager.activations:
+                    if base_hook_manager.verbose:
+                        print(f"Warning: Hook fired for {component_name}")
+                    return
+                
+                # Convert to numpy
+                output_np = output.detach().cpu().numpy()
+                
+                # Get input shape for normalization (approximate from output)
+                B = output_np.shape[0]
+                # For shape normalization, we need to know T
+                # We can get this from the input or make a reasonable assumption
+                if hasattr(module, 'last_input_shape'):
+                    T = module.last_input_shape[1]
+                else:
+                    # Fallback: assume T from context or use a default
+                    T = 6  # This should be passed in somehow
+                
+                # Normalize shape
+                normalized_output = self.normalize_activation_shape(
+                    output_np, component_name, (B, T)
+                )
+                
+                if last_token_only:
+                    if normalized_output.ndim == 3:
+                        base_hook_manager.activations[component_name].append(
+                            normalized_output[:, -1, :])
+                    else:
+                        base_hook_manager.activations[component_name].append(
+                            normalized_output)
+                else:
+                    base_hook_manager.activations[component_name].append(
+                        normalized_output)
+                    
+                if base_hook_manager.verbose:
+                    print(f"Stored normalized activation for {component_name}")
+            return hook
+        
+        # Replace the hook creation method
+        base_hook_manager._make_hook = custom_make_hook
+        return base_hook_manager
 
-    def get_layer(self, layer_name: str):
-        if layer_name in self.layer_mapping:
-            return self.layer_mapping[layer_name]
-        else:
-            return getattr(self.model, layer_name, None)
-
-    def forward(self, idx, targets=None, **kwargs):
-        # Clear caches
-        self._last_token_attention_cache = None
-        self._last_token_mlp_cache = None
-        # Register hooks for last token attention and MLP
-        hooks = []
-        def cache_attention(module, input, output):
-            self._last_token_attention_cache = output.detach()
-        def cache_mlp(module, input, output):
-            self._last_token_mlp_cache = output.detach()
-        # Register on final layer
-        if self._is_last_token_gpt:
-            hooks.append(self.model.transformer.h[-1].attn_final.register_forward_hook(cache_attention))
-            hooks.append(self.model.transformer.h[-1].mlp.register_forward_hook(cache_mlp))
-        else:
-            hooks.append(self.model.transformer.h[-1].attn.register_forward_hook(cache_attention))
-            hooks.append(self.model.transformer.h[-1].mlp.register_forward_hook(cache_mlp))
-        # Forward pass
-        out = self.model(idx, targets, **kwargs)
-        # Remove hooks
-        for h in hooks:
-            h.remove()
-        return out
-
-    def get_last_token_attention(self):
-        """Return the last token's attention output (shape: (B, n_embd) or (B, 1, n_embd))."""
-        if self._last_token_attention_cache is None:
-            raise RuntimeError("No attention output cached. Run a forward pass first.")
-        return self._last_token_attention_cache
-
-    def get_last_token_mlp_activations(self):
-        """Return the last token's MLP output (shape: (B, n_embd) or (B, 1, n_embd))."""
-        if self._last_token_mlp_cache is None:
-            raise RuntimeError("No MLP output cached. Run a forward pass first.")
-        return self._last_token_mlp_cache
-
-    def get_expected_shapes(self, batch_size: int, seq_len: int):
-        shapes = {}
-        for i in range(self.config.n_layer):
-            shapes[f'attn_{i}'] = (batch_size, seq_len, self.config.n_embd)
-            shapes[f'mlp_{i}'] = (batch_size, seq_len, self.config.n_embd)
-        return shapes
+    def patch_analyzer_for_compatibility(self, analyzer):
+        """
+        Patch an analyzer to work with LastTokenGPT by modifying its hook manager.
+        
+        Args:
+            analyzer: The analyzer instance to patch
+            
+        Returns:
+            The patched analyzer
+        """
+        if not self.is_last_token_gpt:
+            return analyzer  # No patching needed for regular models
+            
+        # Store the original _extract_internal_states method
+        original_extract = analyzer._extract_internal_states
+        
+        def patched_extract_internal_states(sequences, components):
+            """Patched version that handles LastTokenGPT shape normalization."""
+            if analyzer.verbose:
+                print("Using LastTokenGPT-compatible activation extraction")
+            
+            # Get input shape info
+            B, T = len(sequences), len(sequences[0]) if sequences else (0, 0)
+            
+            # Store original hook creation method
+            original_make_hook = analyzer.hook_manager._make_hook
+            
+            def shape_normalizing_make_hook(component_name: str, last_token_only: bool = False):
+                def hook(module, input, output):
+                    if analyzer.hook_manager.verbose:
+                        print(f"Hook fired for {component_name}: output shape {output.shape}")
+                    
+                    # Guard against unexpected hook firings
+                    if component_name not in analyzer.hook_manager.activations:
+                        if analyzer.hook_manager.verbose:
+                            print(f"Warning: Hook fired for {component_name}")
+                        return
+                    
+                    # Convert to numpy and normalize shape
+                    output_np = output.detach().cpu().numpy()
+                    normalized_output = self.normalize_activation_shape(
+                        output_np, component_name, (B, T)
+                    )
+                    
+                    if last_token_only:
+                        if normalized_output.ndim == 3:
+                            analyzer.hook_manager.activations[component_name].append(
+                                normalized_output[:, -1, :])
+                        else:
+                            analyzer.hook_manager.activations[component_name].append(
+                                normalized_output)
+                    else:
+                        analyzer.hook_manager.activations[component_name].append(
+                            normalized_output)
+                        
+                    if analyzer.hook_manager.verbose:
+                        print(f"Stored normalized activation for {component_name}")
+                return hook
+            
+            # Temporarily patch the hook manager
+            analyzer.hook_manager._make_hook = shape_normalizing_make_hook
+            
+            try:
+                # Call the original method with patched hooks
+                return original_extract(sequences, components)
+            finally:
+                # Restore original hook creation method
+                analyzer.hook_manager._make_hook = original_make_hook
+        
+        # Replace the analyzer's method
+        analyzer._extract_internal_states = patched_extract_internal_states
+        return analyzer
