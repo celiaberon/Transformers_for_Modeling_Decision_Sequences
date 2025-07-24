@@ -1,35 +1,21 @@
 source "./slurm_scripts/common_functions.sh"
 setup_environment
 
-# Parameters for experiment sweeps (or single)
-LAYERS_ARRAY=(1 2 4 8)
-HEADS_ARRAY=(1 2 4 8)
-EPOCHS_ARRAY=(100 200 400)
-TRAIN_STEPS_ARRAY=(100000 200000 400000)
-CONTEXT_LENGTH_ARRAY=(6 12 24 48)
-EMBD_DIM_ARRAY=(4 8 16 32)
-BATCH_SIZE_ARRAY=(256 512)
-DOMAIN_CONFIG_ARRAY=("domains.ini")
-DOMAIN_ID_ARRAY=("A" "C") # "B" "C" "B_not_sticky")
-EXPERIMENT_TYPE="comparison"  # define the experiment you are running
-export EXPERIMENT_TYPE  # Export immediately so it's available to all functions
-USE_STANDARD_DATASET=true  # Standard dataset flag - when true, uses a shared dataset for all runs
-DEBUG_MODE=false  # Debug mode flag - when true, prevents writing to model_summary.csv
+# Source config file for parameters
+CONFIG_FILE="slurm_scripts/experiment_sweep.conf"
+source "$CONFIG_FILE"
+echo "LAYERS_ARRAY: $LAYERS_ARRAY"
 
-# Parameters for experiment sweeps (or single)
-# LAYERS_ARRAY=(1)
-# HEADS_ARRAY=(1)
-# EPOCHS_ARRAY=(100)
-# TRAIN_STEPS_ARRAY=(100000)
-# CONTEXT_LENGTH_ARRAY=(6)
-# EMBD_DIM_ARRAY=(4)
-# BATCH_SIZE_ARRAY=(256)
-# DOMAIN_CONFIG_ARRAY=("three_domains.ini")
-# DOMAIN_ID_ARRAY=("A" "B" "C" "B_not_sticky")
-# EXPERIMENT_TYPE="basic"  # define the experiment you are running
-# export EXPERIMENT_TYPE  # Export immediately so it's available to all functions
-# USE_STANDARD_DATASET=false  # Standard dataset flag - when true, uses a shared dataset for all runs
-# DEBUG_MODE=false  # Debug mode flag - when true, prevents writing to model_summary.csv
+# Convert string variables to arrays
+LAYERS_ARRAY=($LAYERS_ARRAY)
+HEADS_ARRAY=($HEADS_ARRAY)
+EPOCHS_ARRAY=($EPOCHS_ARRAY)
+TRAIN_STEPS_ARRAY=($TRAIN_STEPS_ARRAY)
+CONTEXT_LENGTH_ARRAY=($CONTEXT_LENGTH_ARRAY)
+EMBD_DIM_ARRAY=($EMBD_DIM_ARRAY)
+BATCH_SIZE_ARRAY=($BATCH_SIZE_ARRAY)
+DOMAIN_CONFIG_ARRAY=($DOMAIN_CONFIG_ARRAY)
+DOMAIN_ID_ARRAY=($DOMAIN_ID_ARRAY)
 
 # Options are:
 #   "basic": run_experiment.sh
@@ -42,24 +28,55 @@ DEBUG_MODE=false  # Debug mode flag - when true, prevents writing to model_summa
 TRACKER_FILE="experiments/${EXPERIMENT_TYPE}/tracker.txt"
 
 # Initialize starting run number - scan existing runs once at the beginning
-initialize_run
-NEXT_RUN_NUMBER=$RUN_NUMBER
+# initialize_run
+# NEXT_RUN_NUMBER=$RUN_NUMBER
 
-# Initialize comparison directory if needed
-if [ "$EXPERIMENT_TYPE" = "comparison" ]; then
-    # Ensure comparison base directory exists
-    mkdir -p "experiments/comparison"
-    
-    # Get next comparison number
-    COMPARISON_NUMBER=$(ls -d experiments/comparison/comparison_* 2>/dev/null | sort -t_ -k2 -n | tail -n1 | sed 's/.*comparison_//' || echo 0)
-    COMPARISON_NUMBER=$((COMPARISON_NUMBER + 1))
-    COMPARISON_DIR="experiments/comparison/comparison_${COMPARISON_NUMBER}"
-    mkdir -p "$COMPARISON_DIR"
-    echo "Created comparison directory: $COMPARISON_DIR"
-    
-    # Update tracker file for comparison
-    TRACKER_FILE="${COMPARISON_DIR}/tracker.txt"
-    echo "Comparison ${COMPARISON_NUMBER} started at $(date)" > "$TRACKER_FILE"
+# Parse --resume <instance_dir> option
+RESUME_MODE=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --resume)
+            RESUME_MODE=true
+            RESUME_DIR="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+if [ "$RESUME_MODE" = true ]; then
+    PARAM_GRID_DIR="$RESUME_DIR"
+    echo "[master_runner] Resuming previous experiment instance in $PARAM_GRID_DIR"
+    # Set COMPARISON_DIR or EXPERIMENT_DIR for downstream logic
+    if [[ "$PARAM_GRID_DIR" == *comparison* ]]; then
+        COMPARISON_DIR="$PARAM_GRID_DIR"
+    else
+        EXPERIMENT_DIR="$PARAM_GRID_DIR"
+    fi
+else
+    # Initialize comparison directory if needed
+    if [ "$EXPERIMENT_TYPE" = "comparison" ]; then
+        # Ensure comparison base directory exists
+        mkdir -p "experiments/comparison"
+        
+        # Get next comparison number
+        COMPARISON_NUMBER=$(ls -d experiments/comparison/comparison_* 2>/dev/null | sort -t_ -k2 -n | tail -n1 | sed 's/.*comparison_//' || echo 0)
+        COMPARISON_NUMBER=$((COMPARISON_NUMBER + 1))
+        COMPARISON_DIR="experiments/comparison/comparison_${COMPARISON_NUMBER}"
+        mkdir -p "$COMPARISON_DIR"
+        echo "Created comparison directory: $COMPARISON_DIR"
+        
+        # Update tracker file for comparison
+        TRACKER_FILE="${COMPARISON_DIR}/tracker.txt"
+        echo "Comparison ${COMPARISON_NUMBER} started at $(date)" > "$TRACKER_FILE"
+        PARAM_GRID_DIR="$COMPARISON_DIR"
+    else
+        EXPERIMENT_DIR="experiments/$EXPERIMENT_TYPE"
+        mkdir -p "$EXPERIMENT_DIR"
+        PARAM_GRID_DIR="$EXPERIMENT_DIR"
+    fi
 fi
 
 # At the top of your script
@@ -124,7 +141,7 @@ submit_experiment() {
 #SBATCH --gpus-per-node=1
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
-#SBATCH --time=02:00:00
+#SBATCH --time=00:50:00
 #SBATCH --mem=80GB
 #SBATCH --partition=kempner
 #SBATCH --output=/dev/null
@@ -216,46 +233,107 @@ EOL
     sleep 1
 }
 
+if [ "$RESUME_MODE" = false ]; then
+    # Submit the parameter grid generation as a SLURM job and wait for completion
+    PARAM_GRID_SCRIPT="slurm_scripts/generate_param_grid.py"
+    PARAM_GRID_JOB_SCRIPT=$(mktemp)
+    cat > $PARAM_GRID_JOB_SCRIPT << EOL
+#!/bin/bash
+#SBATCH --job-name=param_grid_gen
+#SBATCH --account=kempner_bsabatini_lab
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=1
+#SBATCH --time=00:03:00
+#SBATCH --mem=2GB
+#SBATCH --partition=kempner_requeue
+#SBATCH --output=${PARAM_GRID_DIR}/param_grid_gen.log
+#SBATCH --error=${PARAM_GRID_DIR}/param_grid_gen.err
 
-# Submit jobs for each combination in the parameter sweep
-for layers in "${LAYERS_ARRAY[@]}"; do
-    for heads in "${HEADS_ARRAY[@]}"; do
-        for epochs in "${EPOCHS_ARRAY[@]}"; do
-            for train_steps in "${TRAIN_STEPS_ARRAY[@]}"; do
-                for context_length in "${CONTEXT_LENGTH_ARRAY[@]}"; do
-                    for embd_dim in "${EMBD_DIM_ARRAY[@]}"; do
-                        for batch_size in "${BATCH_SIZE_ARRAY[@]}"; do
-                            for domain_config in "${DOMAIN_CONFIG_ARRAY[@]}"; do
-                                for domain_id in "${DOMAIN_ID_ARRAY[@]}"; do
-                                    experiment_name="l${layers}_h${heads}_e${epochs}_c${context_length}_d${embd_dim}"
-                                    # Calculate jobs remaining
-                                    jobs_remaining=$(( (
-                                        ${#LAYERS_ARRAY[@]} * 
-                                        ${#HEADS_ARRAY[@]} * 
-                                        ${#EPOCHS_ARRAY[@]} * 
-                                        ${#TRAIN_STEPS_ARRAY[@]} * 
-                                        ${#CONTEXT_LENGTH_ARRAY[@]} * 
-                                        ${#EMBD_DIM_ARRAY[@]} * 
-                                        ${#BATCH_SIZE_ARRAY[@]} * 
-                                        ${#DOMAIN_CONFIG_ARRAY[@]} * 
-                                        ${#DOMAIN_ID_ARRAY[@]} 
-                                    ) - (NEXT_RUN_NUMBER - RUN_NUMBER) ))
-                                    if [ $CURRENT_JOB_COUNT -ge $MAX_CONCURRENT_JOBS ]; then
-                                        wait_for_job_slot $MAX_CONCURRENT_JOBS $jobs_remaining
-                                        # Reset counter when we've waited
-                                        CURRENT_JOB_COUNT=$(count_running_jobs)
-                                    fi
-                                    submit_experiment "$experiment_name" "$layers" "$heads" "$epochs" "$train_steps" "$context_length" "$embd_dim" "$batch_size" "$domain_config" "$domain_id" "${NEXT_RUN_NUMBER}"
-                                    NEXT_RUN_NUMBER=$((NEXT_RUN_NUMBER + 1))
-                                    CURRENT_JOB_COUNT=$((CURRENT_JOB_COUNT + 1))
-                                done
-                            done
-                        done
-                    done
-                done
-            done
-        done
+module load python/3.12.5-fasrc01
+python $PARAM_GRID_SCRIPT "$CONFIG_FILE" "$PARAM_GRID_DIR"
+EOL
+    PARAM_GRID_JOBID=$(sbatch --parsable $PARAM_GRID_JOB_SCRIPT)
+    echo "Submitted param grid generation job as $PARAM_GRID_JOBID"
+    rm $PARAM_GRID_JOB_SCRIPT
+    # Wait for the param grid job to finish (proceed as soon as the file is ready)
+    echo "Waiting for parameter grid CSV to be created and populated..."
+    while [ ! -s "$PARAM_GRID_DIR/param_grid.csv" ]; do
+        sleep 2
     done
-done
+    # Optionally, wait up to 30 seconds for the SLURM job to disappear from the queue (but do not block if already gone)
+    timeout 30s bash -c "while squeue -j $PARAM_GRID_JOBID > /dev/null 2>&1; do sleep 2; done"
+    echo "Parameter grid generated. Proceeding with experiment submissions."
+fi
+
+PARAM_GRID_CSV="$PARAM_GRID_DIR/param_grid.csv"
+
+# Read the CSV and submit jobs for incomplete runs only
+if [ ! -f "$PARAM_GRID_CSV" ]; then
+    echo "Parameter grid CSV not found: $PARAM_GRID_CSV"
+    exit 1
+fi
+
+# Helper function to update run status in the param grid CSV
+update_run_status() {
+    local csv_file=$1
+    local run_number=$2
+    local new_status=$3
+    python3 - "$csv_file" "$run_number" "$new_status" <<END
+import csv
+import sys
+csv_file = sys.argv[1]
+run_number = sys.argv[2]
+new_status = sys.argv[3]
+rows = []
+header = None
+try:
+    with open(csv_file, newline='') as f:
+        reader = csv.reader(f)
+        for line in reader:
+            if line and any(field.strip() for field in line):
+                header = line
+                break
+        if not header:
+            with open(csv_file, 'w', newline='') as wf:
+                pass
+            sys.exit(0)
+        for row in reader:
+            if not row or len(row) != len(header):
+                continue
+            if row[0] == run_number:
+                row[-1] = new_status
+            rows.append(row)
+    with open(csv_file, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        writer.writerows(rows)
+except Exception as e:
+    with open(csv_file) as f:
+        print(f.read())
+    raise
+END
+}
+
+NEXT_RUN_NUMBER=1
+{
+    read -r header  # skip header
+    while IFS=, read -r run_number layers heads epochs train_steps context_length embd_dim batch_size domain_config domain_id experiment_type use_standard_dataset debug_mode status; do
+        status=$(echo "$status" | tr -d '\r\n ')
+        if [ "$status" != "pending" ]; then
+            continue
+        fi
+        if [ "$experiment_type" = "comparison" ]; then
+            run_dir="experiments/comparison/comparison_*/run_${run_number}"
+        else
+            run_dir="experiments/$experiment_type/run_${run_number}"
+        fi
+        experiment_name="l${layers}_h${heads}_e${epochs}_c${context_length}_d${embd_dim}"
+        submit_experiment "$experiment_name" "$layers" "$heads" "$epochs" "$train_steps" "$context_length" "$embd_dim" "$batch_size" "$domain_config" "$domain_id" "$run_number"
+        update_run_status "$PARAM_GRID_CSV" "$run_number" "launched"
+        NEXT_RUN_NUMBER=$((NEXT_RUN_NUMBER + 1))
+    done
+} < "$PARAM_GRID_CSV"
 
 echo "All experiment jobs submitted."
