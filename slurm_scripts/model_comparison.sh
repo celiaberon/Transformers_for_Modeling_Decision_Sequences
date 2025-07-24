@@ -83,7 +83,7 @@ srun --cpu-bind=none python -m transformer.train \
     --n_head=$N_HEAD \
     --n_embd=$EMBD_DIM \
     --sequence_length=$CONTEXT_LENGTH \
-    --checkpoint_interval="log"
+    --checkpoint_interval="1_000_000"
 
 # Setup GPU environment for inference
 setup_gpu_environment

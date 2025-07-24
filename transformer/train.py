@@ -158,19 +158,15 @@ def write_experiment_summary(args, model, model_name, val_loss_steps, max_steps)
     
     if experiment_type == 'comparison' and comparison_dir:
         # For comparison experiments, write to comparison-specific CSV
-        path_to_file = os.path.join(comparison_dir, 'comparison_summary.csv')
+        path_to_file = os.path.join(comparison_dir, 'model_summary.csv')
         path_to_file = os.path.abspath(path_to_file)
     else:
-        # For regular experiments, write to main model_summary.csv
-        # path_to_file = os.path.abspath(
-        #     os.path.join(__file__, '../../', 'model_summary.csv')
-        # )
         path_to_file = os.path.abspath(
             os.path.join(__file__, '../../', 'experiments', experiment_type, 'model_summary.csv')
         )
     
     # Add prefix to domain_id if using shared datasets
-    domain_id = os.environ.get('DOMAIN_ID', None)
+    domain_id = os.environ.get('DATASET_IDENTIFIER', None)
     use_standard_dataset = (
         os.environ.get('USE_STANDARD_DATASET', 'false').lower() == 'true'
     )

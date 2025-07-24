@@ -80,7 +80,7 @@ else
 fi
 
 # At the top of your script
-MAX_CONCURRENT_JOBS=11
+MAX_CONCURRENT_JOBS=12
 # Function to count currently running/pending jobs
 count_running_jobs() {
     local username=$(whoami)

@@ -212,6 +212,7 @@ setup_standard_dataset() {
         export DATASET_CONFIG_STR="$config_str"
         echo "Using standard dataset in: $STANDARD_DATASET_DIR (identifier: $DATASET_IDENTIFIER)"
     else
+        export DATASET_IDENTIFIER=$DATASET_CONFIG_domain_id
         export USE_STANDARD_DATASET=false
         echo "Using individual datasets for each run"
     fi
