@@ -35,15 +35,32 @@ export DOMAIN_CONFIG=$DOMAIN_CONFIG
 export EXPERIMENT_TYPE=${EXPERIMENT_TYPE:-"basic"}  # Use inherited value or default to basic
 export DEBUG_MODE=$DEBUG_MODE
 
+echo "[run_experiment.sh] Environment variables:"
+echo "  EXPERIMENT_TYPE: $EXPERIMENT_TYPE"
+echo "  COMPARISON_DIR: ${COMPARISON_DIR:-<not set>}"
+echo "  USE_STANDARD_DATASET: $USE_STANDARD_DATASET"
+
 # Setup standard dataset if requested
-setup_standard_dataset \
-    --use-standard-dataset "$USE_STANDARD_DATASET" \
-    --domain-config "$DOMAIN_CONFIG" \
-    --domain-id "$DOMAIN_ID" \
-    --multiple-domains "false" \
-    --train-steps "$TRAIN_STEPS" \
-    --val-steps "1000000" \
-    --run-number "$RUN_NUMBER"
+if [ -n "${COMPARISON_DIR:-}" ]; then
+    setup_standard_dataset \
+        --use-standard-dataset "$USE_STANDARD_DATASET" \
+        --domain-config "$DOMAIN_CONFIG" \
+        --domain-id "$DOMAIN_ID" \
+        --multiple-domains "false" \
+        --train-steps "$TRAIN_STEPS" \
+        --val-steps "1000000" \
+        --run-number "$RUN_NUMBER" \
+        --comparison-dir "$COMPARISON_DIR"
+else
+    setup_standard_dataset \
+        --use-standard-dataset "$USE_STANDARD_DATASET" \
+        --domain-config "$DOMAIN_CONFIG" \
+        --domain-id "$DOMAIN_ID" \
+        --multiple-domains "false" \
+        --train-steps "$TRAIN_STEPS" \
+        --val-steps "1000000" \
+        --run-number "$RUN_NUMBER"
+fi
 
 # Export run number
 export RUN_NUMBER

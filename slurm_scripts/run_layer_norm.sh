@@ -32,11 +32,8 @@ DEBUG_MODE=${12:-"false"}
 
 export DOMAIN_ID=$DOMAIN_ID
 export DOMAIN_CONFIG=$DOMAIN_CONFIG
-export EXPERIMENT_TYPE=${EXPERIMENT_TYPE:-"layer_norm"}  # Use inherited value or default to basic
+export EXPERIMENT_TYPE=${EXPERIMENT_TYPE:-"layer_norm"}  # Use inherited value or default to layer_norm
 export DEBUG_MODE=$DEBUG_MODE
-# export PYTHONPATH="/n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/utils:$PYTHONPATH"
-# export PYTHONPATH="/n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/transformer:$PYTHONPATH"
-# export PYTHONPATH="/n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences:$PYTHONPATH"
 
 
 # Setup standard dataset if requested

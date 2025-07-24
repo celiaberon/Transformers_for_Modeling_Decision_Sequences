@@ -28,25 +28,26 @@ BATCH_SIZE=${8:-256}
 DOMAIN_CONFIG=${9:-"domains.ini"}
 DOMAIN_ID=${10:-"B"}
 USE_STANDARD_DATASET=${11:-"false"}
-COMPARISON_DIR=${12:-""}
-DEBUG_MODE=${13:-"false"}
+DEBUG_MODE=${12:-"false"}
 
 export DOMAIN_ID=$DOMAIN_ID
 export DOMAIN_CONFIG=$DOMAIN_CONFIG
 export EXPERIMENT_TYPE="comparison"
-export COMPARISON_DIR=$COMPARISON_DIR
+# export COMPARISON_DIR=$COMPARISON_DIR
 export DEBUG_MODE=$DEBUG_MODE
 
-# Setup standard dataset if requested
+echo "[model_comparison.sh] Using COMPARISON_DIR from environment: ${COMPARISON_DIR:-<not set>}"
+
+# Always call setup_standard_dataset with --comparison-dir
 setup_standard_dataset \
     --use-standard-dataset "$USE_STANDARD_DATASET" \
-    --comparison-dir "$COMPARISON_DIR" \
     --domain-config "$DOMAIN_CONFIG" \
     --domain-id "$DOMAIN_ID" \
     --multiple-domains "true" \
     --train-steps "$TRAIN_STEPS" \
     --val-steps "1000000" \
-    --run-number "$RUN_NUMBER"
+    --run-number "$RUN_NUMBER" \
+    --comparison-dir "$COMPARISON_DIR"
 
 # Export run number
 export RUN_NUMBER

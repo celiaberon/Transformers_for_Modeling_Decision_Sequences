@@ -72,8 +72,8 @@ create_dataset_config() {
     config[val_domains]=""
     config[use_custom_domains]="false"
     config[run_number]="1"
-    config[comparison_dir]=""
     config[use_standard_dataset]="false"
+    # Don't set comparison_dir by default - only set it if explicitly provided
     
     # Parse named arguments
     while [[ $# -gt 0 ]]; do
@@ -115,7 +115,10 @@ create_dataset_config() {
                 shift 2
                 ;;
             --comparison-dir)
-                config[comparison_dir]="$2"
+                # Only set if the value is not empty
+                if [ -n "$2" ]; then
+                    config[comparison_dir]="$2"
+                fi
                 shift 2
                 ;;
             --use-standard-dataset)
@@ -191,21 +194,29 @@ setup_standard_dataset() {
     local config_str=$(create_dataset_config "$@")
     parse_dataset_config "$config_str"
     
+    echo "DEBUG: setup_standard_dataset config values:"
+    echo "  DATASET_CONFIG_use_standard_dataset: $DATASET_CONFIG_use_standard_dataset"
+    echo "  DATASET_CONFIG_comparison_dir: ${DATASET_CONFIG_comparison_dir:-<not set>}"
+    echo "  EXPERIMENT_TYPE: ${EXPERIMENT_TYPE:-<not set>}"
+    
     if [ "$DATASET_CONFIG_use_standard_dataset" = "true" ]; then
         # Generate domain-specific identifier
         DATASET_IDENTIFIER=$(generate_domain_identifier "$config_str")
         
         # Use a single shared datasets folder for all standard datasets
-        if [ -n "$DATASET_CONFIG_comparison_dir" ]; then
-            # For comparison experiments, use shared datasets folder in comparison directory"
+        if [ -n "${DATASET_CONFIG_comparison_dir:-}" ]; then
+            # For comparison experiments, use shared datasets folder in comparison directory
             STANDARD_DATASET_DIR="${DATASET_CONFIG_comparison_dir}/shared_datasets"
+            echo "DEBUG: Using comparison directory: $DATASET_CONFIG_comparison_dir"
         else
             # For non-comparison experiments, use shared datasets folder within experiment type
             local experiment_type=${EXPERIMENT_TYPE:-basic}
             STANDARD_DATASET_DIR="${BASE_PATH}/experiments/${experiment_type}/shared_datasets"
+            echo "DEBUG: Using experiment type directory: $experiment_type"
         fi
         
         mkdir -p "$STANDARD_DATASET_DIR"
+        echo "Set STANDARD_DATASET_DIR to $STANDARD_DATASET_DIR"
         export STANDARD_DATASET_DIR
         export USE_STANDARD_DATASET=true
         export DATASET_IDENTIFIER
@@ -532,4 +543,45 @@ print_section_header() {
     local title="$1"
     printf '%*s\n' 80 '' | tr ' ' '-'
     echo -e "\n$title\n"
+} 
+
+# === CSV Status Update for Job Arrays ===
+update_run_status() {
+    local csv_file=$1
+    local run_number=$2
+    local new_status=$3
+    python3 - "$csv_file" "$run_number" "$new_status" <<END
+import csv
+import sys
+csv_file = sys.argv[1]
+run_number = sys.argv[2]
+new_status = sys.argv[3]
+rows = []
+header = None
+try:
+    with open(csv_file, newline='') as f:
+        reader = csv.reader(f)
+        for line in reader:
+            if line and any(field.strip() for field in line):
+                header = line
+                break
+        if not header:
+            with open(csv_file, 'w', newline='') as wf:
+                pass
+            sys.exit(0)
+        for row in reader:
+            if not row or len(row) != len(header):
+                continue
+            if row[0] == run_number:
+                row[-1] = new_status
+            rows.append(row)
+    with open(csv_file, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        writer.writerows(rows)
+except Exception as e:
+    with open(csv_file) as f:
+        print(f.read())
+    raise
+END
 } 
