@@ -4,7 +4,7 @@
 source "./slurm_scripts/common_functions.sh"
 setup_environment
 
-CONFIG_FILE="slurm_scripts/experiment_sweep.conf"
+CONFIG_FILE="slurm_scripts/basic_params.conf"
 PARAM_GRID=""
 CONCURRENCY=12
 

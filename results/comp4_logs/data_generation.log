@@ -1,0 +1,70 @@
+2025-07-24 17:29:32 - job_26253521 - generate_data - Starting data generation with args:
+{ 'config_file': 'domains.ini',
+  'include_val': True,
+  'multiple_domains': True,
+  'num_steps_train': 100000,
+  'num_steps_val': 1000000,
+  'overwrite': False,
+  'profile': False,
+  'run': 1,
+  'task_params': { 'A': { 'agent': { 'alpha': 0.56,
+                                     'beta': 1.84,
+                                     'policy': 'probability_matching',
+                                     'tau': 1.25},
+                          'environment': { 'high_reward_prob': 0.9,
+                                           'low_reward_prob': 0.1,
+                                           'transition_prob': 0.02}},
+                   'C': { 'agent': { 'alpha': 1.1,
+                                     'beta': 1.92,
+                                     'policy': 'probability_matching',
+                                     'tau': 1.54},
+                          'environment': { 'high_reward_prob': 0.7,
+                                           'low_reward_prob': 0.3,
+                                           'transition_prob': 0.02}}}}
+2025-07-24 17:29:34 - job_26253521 - generate_data - Generated 100000 steps for tr in run_1
+2025-07-24 17:29:34 - job_26253521 - generate_data - Files saved to experiments/comparison/comparison_4/run_1/seqs
+2025-07-24 17:29:51 - job_26253521 - generate_data - Generated 1000000 steps for v in run_1
+2025-07-24 17:29:51 - job_26253521 - generate_data - Files saved to experiments/comparison/comparison_4/run_1/seqs
+2025-07-24 17:29:51 - job_26253521 - generate_data - Metadata saved to experiments/comparison/comparison_4/run_1/metadata.txt
+2025-07-24 17:30:01 - job_26253521 - basic_evaluation - <generator object main.<locals>.<genexpr> at 0x14a217721490>
+
+
+Analysis for Domain C
+                           Left      Right
+========================================
+Rewarded (%)              28.85%      30.76%
+Unrewarded (%)            19.35%      21.04%
+========================================
+Total Trials:            52,323
+Number of Transitions:    1,046.0 (2.00% of total trials)
+Selected Correct (%):      73.38%
+Total trials: 52,323
+Total switches: 3,484.0
+Percent of trials with a switch: 6.67%
+
+
+
+Analysis for Domain A
+                           Left      Right
+========================================
+Rewarded (%)              40.91%      37.17%
+Unrewarded (%)            10.95%      10.97%
+========================================
+Total Trials:            47,677
+Number of Transitions:      969.0 (2.04% of total trials)
+Selected Correct (%):      84.82%
+Total trials: 47,677
+Total switches: 4,015.0
+Percent of trials with a switch: 8.44%
+
+2025-07-24 17:30:15 - job_26253521 - graphs_on_trial_block_transitions - <generator object main.<locals>.<genexpr> at 0x14cf7baa05f0>
+2025-07-24 17:30:52 - job_26253521 - graphs_on_trial_block_transitions - Percent of trials with a switch: 7.59%
+2025-07-24 17:43:29 - job_unknown - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-07-24 17:43:29 - job_unknown - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-07-24 17:43:29 - job_unknown - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-07-24 17:43:29 - job_unknown - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-07-24 17:43:30 - job_26253521 - inspect_data - Total T=12 sequences in training data: 35570
+2025-07-24 17:43:30 - job_26253521 - inspect_data - Total T=12 sequences in validation data: 172719
+2025-07-24 17:43:30 - job_26253521 - inspect_data - Overall prediction accuracy: 55.49%
+2025-07-24 17:43:31 - job_unknown - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-07-24 17:43:31 - job_unknown - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.

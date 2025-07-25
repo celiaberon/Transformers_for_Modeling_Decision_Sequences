@@ -194,11 +194,6 @@ setup_standard_dataset() {
     local config_str=$(create_dataset_config "$@")
     parse_dataset_config "$config_str"
     
-    echo "DEBUG: setup_standard_dataset config values:"
-    echo "  DATASET_CONFIG_use_standard_dataset: $DATASET_CONFIG_use_standard_dataset"
-    echo "  DATASET_CONFIG_comparison_dir: ${DATASET_CONFIG_comparison_dir:-<not set>}"
-    echo "  EXPERIMENT_TYPE: ${EXPERIMENT_TYPE:-<not set>}"
-    
     if [ "$DATASET_CONFIG_use_standard_dataset" = "true" ]; then
         # Generate domain-specific identifier
         DATASET_IDENTIFIER=$(generate_domain_identifier "$config_str")
