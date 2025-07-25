@@ -1,0 +1,25 @@
+2025-07-24 17:39:04 - job_26253521 - inference - Starting inference with model: None
+2025-07-24 17:39:04 - job_26253521 - inference - Generating predictions using batch approach with context length 12
+2025-07-24 17:39:06 - job_26253521 - inference - Generated predictions for 974848 tokens in 1.78 seconds
+2025-07-24 17:39:09 - job_26253521 - inference - Guess metadata saved to experiments/comparison/comparison_4/run_1/metadata.txt
+2025-07-24 17:39:09 - job_26253521 - inference - Model predictions saved to experiments/comparison/comparison_4/run_1/preds/pred_model_seen38M.txt
+2025-07-24 17:39:09 - job_26253521 - inference - Prediction indices saved to experiments/comparison/comparison_4/run_1/preds/pred_indices_model_seen38M.txt
+
+Analysis for Domain A
+
+                                     Accuracy: 63.66% (296966/466491 correct predictions)
+          Choice only Accuracy (Right/Left same): 88.95%
+               Reward Accuracy (Upper/Lower same): 67.30%
+
+Switch Percentage (model): 6.71%
+Switch Percentage (ground truth): 8.49%
+
+Analysis for Domain C
+
+                                     Accuracy: 49.13% (211974/431478 correct predictions)
+          Choice only Accuracy (Right/Left same): 87.70%
+               Reward Accuracy (Upper/Lower same): 54.72%
+
+Switch Percentage (model): 8.35%
+Switch Percentage (ground truth): 6.68%
+2025-07-24 17:40:50 - job_26253521 - graphs_transformer_vs_ground_truth - Percent of trials with a switch: 7.43%

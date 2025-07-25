@@ -1,0 +1,192 @@
+=======================================================
+Starting experiment: run_1
+Model config: 1 layers, 1 heads, 16 embedding dim
+Training config: 400 epochs, 100000 train steps, batch size 256
+Context length: 12
+Domain config: domains.ini
+Domain ID: A
+Experiment type: comparison
+=======================================================
+[model_comparison.sh] Using COMPARISON_DIR from environment: experiments/comparison/comparison_4
+DEBUG: setup_standard_dataset config values:
+  DATASET_CONFIG_use_standard_dataset: true
+  DATASET_CONFIG_comparison_dir: experiments/comparison/comparison_4
+  EXPERIMENT_TYPE: comparison
+DEBUG: Using comparison directory: experiments/comparison/comparison_4
+Set STANDARD_DATASET_DIR to experiments/comparison/comparison_4/shared_datasets
+Using standard dataset in: experiments/comparison/comparison_4/shared_datasets (identifier: A_C)
+Using run number: 1
+--------------------------------------------------------------------------------
+
+Data Generation
+
+Acquired dataset generation lock
+Generating standard dataset...
+Configuration: domain_config=domains.ini, domain_id=A
+               train_steps=100000, val_steps=1000000
+               multiple_domains=true, use_custom_domains=false
+--------------------------------------------------------------------------------
+generate_data.py
+
+Domain ID: None
+Config file: domains.ini
+Copied metadata: metadata_A_C.txt from experiments/comparison/comparison_4/run_1
+Running evaluation on generated standard dataset...
+--------------------------------------------------------------------------------
+basic_evaluation.py
+
+--------------------------------------------------------------------------------
+graphs_on_trial_block_transitions.py
+
+saved block position behavior to experiments/comparison/comparison_4/shared_datasets/agent_behavior/bpos_v_A_C.png
+saved `domain` comparison for 2 trials to experiments/comparison/comparison_4/shared_datasets/agent_behavior/cond_switch_2v_domain_comparison_A_C.png
+saved `domain` comparison for 3 trials to experiments/comparison/comparison_4/shared_datasets/agent_behavior/cond_switch_3v_domain_comparison_A_C.png
+Copied data generation log: data_generation_A_C.log from experiments/comparison/comparison_4/run_1/logs
+Standard dataset generation completed successfully
+Released dataset generation lock
+WORLD_SIZE=1
+MASTER_PORT=12355
+MASTER_ADDR=holygpu8a19101
+--------------------------------------------------------------------------------
+
+Model Training
+
+--------------------------------------------------------------------------------
+train.py
+
+0 None None 1
+DDP setup: rank=0, local_rank=0, world_size=1
+read in 100000 tokens from experiments/comparison/comparison_4/shared_datasets/seqs/behavior_A_C_tr.txt
+read in 1000000 tokens from experiments/comparison/comparison_4/shared_datasets/seqs/behavior_A_C_v.txt
+num decayed parameter tensors: 6, with 3,328 parameters
+num non-decayed parameter tensors: 10, with 240 parameters
+Rank: 0, Local Rank: 0, World Size: 1
+Rank: 0, tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+DDP WORLD SIZE:  1
+1.3109639883041382
+0.7864944338798523
+0.7768433690071106
+0.7731817364692688
+0.7695900201797485
+0.7675158381462097
+0.7663677334785461
+0.7659988403320312
+0.7657620906829834
+0.7656521797180176
+0.765579342842102
+0.7655721306800842
+0.765570342540741
+0.7655208706855774
+0.7654489278793335
+0.7654380798339844
+0.7654378414154053
+0.765343427658081
+0.7653013467788696
+0.7653162479400635
+0.7652446031570435
+0.7651706337928772
+0.7652449607849121
+0.7651448845863342
+0.7650763392448425
+0.7650101780891418
+0.7649316191673279
+0.7648228406906128
+0.7648547887802124
+0.7647243142127991
+0.7646499872207642
+0.7645598649978638
+0.7645637392997742
+0.7644650340080261
+0.764408528804779
+0.764360249042511
+0.7642495632171631
+0.7641879916191101
+0.7640917301177979
+0.7640444040298462
+0.7639410495758057
+0.7638643383979797
+0.7637726068496704
+0.763695478439331
+0.7635971307754517
+0.7634977698326111
+0.7633835077285767
+0.7632966041564941
+0.763191282749176
+0.7630895376205444
+0.762981116771698
+0.7628741264343262
+0.7627999186515808
+0.7627098560333252
+0.7625830173492432
+0.7624967694282532
+0.7624053359031677
+0.7623332142829895
+0.7622619867324829
+0.7621641159057617
+0.7620936036109924
+0.7620088458061218
+0.761940598487854
+0.7618800401687622
+0.7618139982223511
+0.7617510557174683
+0.7616963386535645
+0.7616379857063293
+0.7615838050842285
+0.7615410089492798
+0.7614793181419373
+0.7614365816116333
+0.7614006400108337
+0.7613595128059387
+0.7613228559494019
+0.7612948417663574
+0.7612590789794922
+0.7612305283546448
+0.7612016201019287
+0.7611780762672424
+0.761150062084198
+0.7611241936683655
+0.7610983848571777
+0.7610729336738586
+0.7610589265823364
+0.7610358595848083
+0.7610260248184204
+0.7610120177268982
+0.760991632938385
+0.7609838843345642
+0.7609784007072449
+0.760968804359436
+0.7609550952911377
+0.7609487175941467
+0.7609415054321289
+0.7609337568283081
+0.7609304785728455
+0.7609320282936096
+0.7609174847602844
+0.7609213590621948
+0.7609156966209412
+Detected 1 GPU(s) for execution
+--------------------------------------------------------------------------------
+
+Transformer Evaluation
+
+Using cuda device
+--------------------------------------------------------------------------------
+guess_using_transformer.py
+
+read in 1000000 tokens from experiments/comparison/comparison_4/shared_datasets/seqs/behavior_A_C_v.txt
+--------------------------------------------------------------------------------
+evaluate_transformer_guess.py
+
+--------------------------------------------------------------------------------
+graphs_transformer_vs_ground_truth.py
+
+model_name:  model_seen38M
+saved block position behavior to experiments/comparison/comparison_4/run_1/predictions/bpos_model_seen38M_v.png
+plotting conditional switching eval
+saved conditional probabilities for 2 trials to experiments/comparison/comparison_4/run_1/predictions/cond_switch_2model_seen38M_vA.png
+saved conditional probabilities for 2 trials to experiments/comparison/comparison_4/run_1/predictions/cond_switch_2model_seen38M_vC.png
+saved conditional probabilities for 3 trials to experiments/comparison/comparison_4/run_1/predictions/cond_switch_3model_seen38M_vA.png
+saved conditional probabilities for 3 trials to experiments/comparison/comparison_4/run_1/predictions/cond_switch_3model_seen38M_vC.png
+--------------------------------------------------------------------------------
+inspect_data.py
+

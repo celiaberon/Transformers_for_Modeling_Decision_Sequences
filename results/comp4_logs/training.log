@@ -1,0 +1,28 @@
+2025-07-24 17:31:05 - job_26253521 - train - Initialized master logger (rank 0)
+2025-07-24 17:31:05 - job_26253521 - train - Starting training with args: Namespace(sequence_length=12, n_layer=1, n_head=1, n_embd=16, epochs=400, max_lr=0.0006, task_id=None, run_number=1, compile=False, predict=False, eval_interval=None, checkpoint_interval=1000000.0, enforce_data_epochs=False, batch_size=256, choice_only=False, model_type='GPT')
+2025-07-24 17:31:05 - job_26253521 - train - Train loader class: DataLoader
+2025-07-24 17:31:05 - job_26253521 - train - Setting eval interval to 758
+2025-07-24 17:31:05 - job_26253521 - train - Total batch size: 6144
+2025-07-24 17:31:05 - job_26253521 - train - Gradient accumulation steps: 2
+2025-07-24 17:31:05 - job_26253521 - train - Total training steps: 75800
+2025-07-24 17:31:05 - job_26253521 - train - Steps to next checkpoint: 189500000
+2025-07-24 17:31:05 - job_26253521 - train - Batches per epoch: 379
+2025-07-24 17:31:12 - job_26253521 - train - step 0 | loss: 1.3362 | val_loss: 1.3110 | lr: 6.0000e-07 | norm: 1.1606 | dt: 275.67 ms | tok/sec: 22287.26
+2025-07-24 17:31:12 - job_26253521 - train - Checkpoint at step 0 (dataloader pos: 512)
+2025-07-24 17:31:12 - job_26253521 - train - Saving model at: experiments/comparison/comparison_4/run_1/models/model_seen38M_cp0.pth
+2025-07-24 17:31:12 - job_26253521 - train - Checkpoint saved. Best val loss: 1.3110 (improved: True)
+2025-07-24 17:31:57 - job_26253521 - train - step 7580 | loss: 0.8665 | val_loss: 0.7656 | lr: 5.8975e-04 | norm: 0.4308 | dt: 4.60 ms | tok/sec: 1335153.81
+2025-07-24 17:32:43 - job_26253521 - train - step 15160 | loss: 0.8662 | val_loss: 0.7652 | lr: 5.5364e-04 | norm: 0.4380 | dt: 4.56 ms | tok/sec: 1348357.25
+2025-07-24 17:33:28 - job_26253521 - train - step 22740 | loss: 0.8682 | val_loss: 0.7646 | lr: 4.9505e-04 | norm: 0.4598 | dt: 4.53 ms | tok/sec: 1356234.08
+2025-07-24 17:34:14 - job_26253521 - train - step 30320 | loss: 0.8644 | val_loss: 0.7639 | lr: 4.1988e-04 | norm: 0.5110 | dt: 4.63 ms | tok/sec: 1327587.64
+2025-07-24 17:35:00 - job_26253521 - train - step 37900 | loss: 0.8705 | val_loss: 0.7630 | lr: 3.3567e-04 | norm: 0.5563 | dt: 4.64 ms | tok/sec: 1323428.71
+2025-07-24 17:35:46 - job_26253521 - train - step 45480 | loss: 0.8727 | val_loss: 0.7621 | lr: 2.5089e-04 | norm: 0.6142 | dt: 4.89 ms | tok/sec: 1255348.98
+2025-07-24 17:36:35 - job_26253521 - train - step 53060 | loss: 0.8731 | val_loss: 0.7615 | lr: 1.7406e-04 | norm: 0.6632 | dt: 4.72 ms | tok/sec: 1300388.75
+2025-07-24 17:37:22 - job_26253521 - train - step 60640 | loss: 0.8715 | val_loss: 0.7612 | lr: 1.1291e-04 | norm: 0.7121 | dt: 4.95 ms | tok/sec: 1241379.82
+2025-07-24 17:38:07 - job_26253521 - train - step 68220 | loss: 0.8754 | val_loss: 0.7610 | lr: 7.3567e-05 | norm: 0.7462 | dt: 4.61 ms | tok/sec: 1333771.74
+2025-07-24 17:38:53 - job_26253521 - train - Saving model at: experiments/comparison/comparison_4/run_1/models/model_seen38M.pth
+2025-07-24 17:38:53 - job_26253521 - train - Metadata saved to experiments/comparison/comparison_4/run_1/metadata.txt
+2025-07-24 17:38:55 - job_26253521 - train - Experiment summary:
+{'model_id': 'sweep', 'experiment_type': 'comparison', 'domain_config': 'domains.ini', 'domain_id': 'shared_A_C', 'model_type': 'GPT', 'num_samples': '38M', 'num_parameters': 3568, 'max_steps': 75800, 'run_number': 1, 'sequence_length': 12, 'n_layer': 1, 'n_head': 1, 'n_embd': 16, 'epochs': 400, 'max_lr': 0.0006, 'task_id': None, 'compile': False, 'predict': False, 'eval_interval': 758, 'checkpoint_interval': 1000000.0, 'enforce_data_epochs': False, 'batch_size': 256, 'choice_only': False, 'best_val_full_loss': 0.7609156966209412, 'best_val_full_loss_step': 75800, 'best_val_choice_loss': 0.2839820981025696, 'best_val_choice_loss_step': 758, 'best_val_reward_loss': 0.6544535756111145, 'best_val_reward_loss_step': 0}
+2025-07-24 17:38:55 - job_26253521 - train - Experiment summary saved to /n/home00/cberon/code/Transformers_for_Modeling_Decision_Sequences/experiments/comparison/comparison_4/model_summary.csv
+2025-07-24 17:38:55 - job_26253521 - train - Training completed. Final model saved as model_seen38M
